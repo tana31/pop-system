@@ -1,16 +1,9 @@
 /**
  * POPセル（1枚分）のDOM生成
+ * item はマスタWorkerが変換済みの商品データ（形は js/scan/master-schema.js 冒頭を参照）
  */
-import { THEME_IMAGE_BASE_URL, SIZES_WITH_DEDICATED_IMAGE } from './constants.js';
-
-// item はマスタWorkerが変換済みの商品データ（形は js/master-schema.js 冒頭を参照）
-
-// テーマの設定項目 → CSS変数
-const THEME_CSS_VARS = {
-  bgColor:      '--pop-bg-standard',
-  commentColor: '--pop-color-comment',
-  priceColor:   '--pop-color-price-red'
-};
+import { applyThemeColors, themeImageUrls } from './themes.js';
+import { createBarcodeElement } from './barcode.js';
 
 /** POPセルを生成 */
 export function createPopCell(conf, item, theme) {
@@ -20,60 +13,54 @@ export function createPopCell(conf, item, theme) {
 
   applyThemeColors(cell, theme);
 
-  const d = item;
   cell.innerHTML = `
     <div class="pop-content">
-      <div class="pop-comment">${escapeHtml(d.comment)}</div>
-      <div class="pop-maker">${escapeHtml(d.maker)}</div>
-      <div class="pop-name">${escapeHtml(d.name)}</div>
+      <div class="pop-comment">${escapeHtml(item.comment)}</div>
+      <div class="pop-maker">${escapeHtml(item.maker)}</div>
+      <div class="pop-name">${escapeHtml(item.name)}</div>
       <div class="pop-qty-group">
-        <span class="pop-qty">${escapeHtml(d.qty1)}</span>
-        <span class="pop-qty">${escapeHtml(d.qty2)}</span>
+        <span class="pop-qty">${escapeHtml(item.qty1)}</span>
+        <span class="pop-qty">${escapeHtml(item.qty2)}</span>
       </div>
       <div class="pop-tax-excl-container">
         <span class="pop-tax-badge-black">税抜</span>
         <div class="pop-price-excl">
-          ${d.priceExcl.toLocaleString()}<span class="unit">円</span>
+          ${item.priceExcl.toLocaleString()}<span class="unit">円</span>
         </div>
       </div>
       <div class="pop-divider"></div>
-      <div class="pop-tax-incl">(税込) ${d.price.toLocaleString()}円</div>
-      <div class="pop-risk-tag">${escapeHtml(d.risk)}</div>
+      <div class="pop-tax-incl">(税込) ${item.price.toLocaleString()}円</div>
+      <div class="pop-risk-tag">${escapeHtml(item.risk)}</div>
     </div>
   `;
 
-  const image = resolveImageUrls(theme, conf.key);
+  // POP下部に JAN バーコードと数字を配置
+  cell.querySelector('.pop-content').appendChild(createBarcodeElement(item.jan));
+
+  const image = themeImageUrls(theme, conf.key);
   if (image) cell.prepend(createImageContainer(image.src, image.fallback));
 
   return cell;
 }
 
-function applyThemeColors(cell, theme) {
-  Object.entries(THEME_CSS_VARS).forEach(([themeKey, cssVar]) => {
-    if (theme[themeKey]) cell.style.setProperty(cssVar, theme[themeKey]);
-  });
-}
-
 /**
- * 画像URLを決定。専用画像があるサイズ（A9タテ）は sale.png → sale_a9.png を優先し、
- * 読み込めなければ通常画像にフォールバック
+ * 余白を広げたぶん欄が狭くなるため、税抜価格が「税抜」バッジと並んで入り切らない場合は
+ * 価格の文字だけを縮めて1行に収める（桁数の多い価格でも切れないように）。
+ * 画面に配置した後（レイアウト確定後）に呼ぶこと
  */
-function resolveImageUrls(theme, sizeKey) {
-  if (!theme.image) return null;
-  const baseUrl = THEME_IMAGE_BASE_URL + theme.image;
+export function fitPopText(root) {
+  for (const box of root.querySelectorAll('.pop-tax-excl-container')) {
+    const price = box.querySelector('.pop-price-excl');
+    if (!price) continue;
+    price.style.fontSize = '';                      // デザインを変えて描き直したときのためにリセット
+    const overflow = box.scrollWidth - box.clientWidth;
+    if (overflow <= 0) continue;
 
-  if (SIZES_WITH_DEDICATED_IMAGE.includes(sizeKey)) {
-    return { src: THEME_IMAGE_BASE_URL + toSizeVariantName(theme.image, sizeKey), fallback: baseUrl };
+    const width = price.offsetWidth;                // 回転配置でも回転前の幅を使う
+    const scale = Math.max(0.5, (width - overflow) / width * 0.97);
+    const size = parseFloat(getComputedStyle(price).fontSize);
+    price.style.fontSize = `${size * scale}px`;
   }
-  return { src: baseUrl, fallback: '' };
-}
-
-/** ファイル名の拡張子の前にサイズ名を付ける（sale.png → sale_a9.png） */
-export function toSizeVariantName(fileName, sizeKey) {
-  const dot = fileName.lastIndexOf('.');
-  const slash = fileName.lastIndexOf('/');
-  if (dot <= slash + 1) return `${fileName}_${sizeKey}`; // 拡張子なし
-  return `${fileName.slice(0, dot)}_${sizeKey}${fileName.slice(dot)}`;
 }
 
 /** 画像エリア。読み込み失敗時はフォールバック → それも無ければエリアごと削除 */

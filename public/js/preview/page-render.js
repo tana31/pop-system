@@ -1,8 +1,11 @@
 /**
  * ページ記述（imposition.js の出力）から A4ページのDOMを生成
  */
-import { ROTATE_SLOT_CLASS, ROTATE_INNER_CLASS } from './constants.js';
 import { createPopCell } from './pop-cell.js';
+
+// 回転配置（A5ヨコの混載）の目印クラス。PDF出力（pdf-export.js）でも使う
+export const ROTATE_SLOT_CLASS = 'pop-rotate-slot';
+export const ROTATE_INNER_CLASS = 'pop-rotate-inner';
 
 export function renderPage(pageDesc, theme) {
   const page = document.createElement('div');

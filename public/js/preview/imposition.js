@@ -9,8 +9,13 @@
  *   placements: [{ conf, item, col, row, colSpan, rowSpan, rotate }]  // col/row は0始まり
  * }
  */
-import { PAGE_MM } from './constants.js';
-import { toCount } from './data.js';
+import { toCount } from '../shared/print-queue.js';
+
+// A4用紙の寸法（mm）。PDF出力（pdf-export.js）でも使う
+export const PAGE_MM = {
+  landscape: { w: 297, h: 210 },
+  portrait:  { w: 210, h: 297 }
+};
 
 /** 規格ごとに用紙を分けるモード */
 export function buildSeparatedPages(queue, sizeConfigs) {

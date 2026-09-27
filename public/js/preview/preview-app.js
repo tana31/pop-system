@@ -1,12 +1,14 @@
 /**
- * プレビュー画面のエントリポイント
+ * プレビュー画面の入口（preview.html から読み込む唯一のスクリプト）
  * 印刷キュー読込 → テーマ取得 → 面付け計算 → DOM描画。モードかデザインを変えるたびに面付けからやり直す
  */
-import { sizeConfigs, mixedGrid } from './preview/constants.js';
-import { loadQueue, countTotalPops, fetchThemes } from './preview/data.js';
-import { buildSeparatedPages, buildMixedPages } from './preview/imposition.js';
-import { renderPage, renderEmptyState } from './preview/page-render.js';
-import { exportPagesToPdf } from './preview/pdf-export.js';
+import { SIZE_CONFIGS, MIXED_GRID } from '../shared/pop-sizes.js';
+import { loadQueue, countTotalPops } from '../shared/print-queue.js';
+import { fetchThemes } from './themes.js';
+import { buildSeparatedPages, buildMixedPages } from './imposition.js';
+import { renderPage, renderEmptyState } from './page-render.js';
+import { fitPopText } from './pop-cell.js';
+import { exportPagesToPdf } from './pdf-export.js';
 
 const modeSelect = document.getElementById('modeSelect');
 const themeSelect = document.getElementById('themeSelect');
@@ -52,11 +54,12 @@ function currentTheme() {
 
 function render() {
   const pages = modeSelect.value === 'mixed'
-    ? buildMixedPages(queue, sizeConfigs, mixedGrid)
-    : buildSeparatedPages(queue, sizeConfigs);
+    ? buildMixedPages(queue, SIZE_CONFIGS, MIXED_GRID)
+    : buildSeparatedPages(queue, SIZE_CONFIGS);
 
   const theme = currentTheme();
   renderArea.replaceChildren(...pages.map(p => renderPage(p, theme)));
+  fitPopText(renderArea);
 
   // テーマ取得エラーの表示中は上書きしない
   if (!statusInfo.textContent.startsWith('⚠️')) {

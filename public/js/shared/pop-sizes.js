@@ -1,8 +1,8 @@
 /**
- * POP規格・面付け設定（スキャン画面・プレビュー画面で共有）
+ * POP規格（サイズ）の定義（スキャン画面・プレビュー画面で共有。DOMには触らない）
  *
  * ★ POP のサイズを追加するときは、ここに1件追加し、
- *    pop-styles.css に .pop-size-* を追加するだけでよい
+ *    css/pop-styles.css に .pop-size-* を追加するだけでよい
  *    （スキャン画面の枚数欄はこの定義から自動で作られる）
  *
  * label:   スキャン画面の枚数欄に出す名前
@@ -12,12 +12,8 @@
  *          rotate: true の場合、POPを90°回転させて配置（A5ヨコ用）
  */
 
-// 印刷キューの保存先（スキャン画面 → プレビュー画面の受け渡し）
-// ※ キューの中身の形式を変えたら末尾の番号を上げる（古い形式は読まれなくなる）
-export const QUEUE_STORAGE_KEY = 'pop_print_queue_v2';
-
-// スキャン・検索で追加したときに 1枚 を入れるサイズ
-export const DEFAULT_SIZE_KEY = 'a8';
+// スキャン・検索で追加したときに 1枚 を入れるサイズ（同じJANの再スキャンでもこのサイズが +1）
+export const DEFAULT_SIZE_KEY = 'a9';
 
 export const MIXED_GRID = {
   cols: 8,

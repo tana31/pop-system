@@ -13,6 +13,10 @@
   --pop-color-risk-text: #1e3a8a;
 
   --pop-bg-standard: #ffffff;
+
+  /* 全サイズ共通の最低余白（上下左右）。プリンターの印刷できない範囲（用紙の端から約4mm）に
+     文字や価格が掛からないようにする。サイズ別の余白がこれより大きい場合はそちらを使う */
+  --pop-safe-margin: 4mm;
 }
 
 /* A4 用紙スタイル (ミシン目にピッタリ合わせるため外枠余白0) */
@@ -39,7 +43,8 @@
   height: 100%;
   overflow: hidden;
   text-align: left;
-  padding: var(--pop-pad, 2mm);
+  padding-block: max(var(--pop-safe-margin), var(--pop-pad-y, 0mm));
+  padding-inline: max(var(--pop-safe-margin), var(--pop-pad-x, 0mm));
   display: flex;
 }
 
@@ -209,6 +214,8 @@
   text-align: left;
   padding: 0.3mm 0;
   line-height: 1.0;
+  /* 未記入でも1行分の高さを確保（無いと税抜価格などが下にずれる） */
+  min-height: calc(var(--pop-risk-size) + 0.6mm);
   margin-top: 0.3mm;
   white-space: nowrap;
   overflow: hidden;
@@ -216,28 +223,74 @@
   width: 100%;
 }
 
+/* 10. JANバーコード
+   --pop-barcode-w: バーコード本体（95モジュール）の幅。JAN規格の最小倍率 0.8 倍（約25.1mm）以上にする
+   左右の余白（クワイエットゾーン: 左11・右7モジュール）を含めた全体が、欄の幅に収まらない場合は
+   全体を縮めて収める（線が途中で切れて読めなくなるのを防ぐ） */
+.pop-barcode {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-top: var(--pop-barcode-gap, 0.8mm);
+  background: #ffffff;
+  text-align: center;
+  line-height: 1;
+}
+/* 欄が狭いサイズ（A9）は、左右の白い余白（クワイエットゾーン）だけ POP の余白側へ
+   --pop-barcode-bleed ぶんはみ出してよい（線そのものは余白に掛からない） */
+.pop-barcode {
+  margin-inline: calc(var(--pop-barcode-bleed, 0mm) * -1);
+}
+.pop-barcode.is-ean13 { width: min(calc(var(--pop-barcode-w, 30mm) * 113 / 95), calc(100% + var(--pop-barcode-bleed, 0mm) * 2)); }
+.pop-barcode.is-ean8  { width: min(calc(var(--pop-barcode-w, 30mm) * 81 / 95), calc(100% + var(--pop-barcode-bleed, 0mm) * 2)); }
+
+.pop-barcode-bars {
+  display: block;
+  height: var(--pop-barcode-h, 6mm);
+  fill: #000000;
+}
+.is-ean13 .pop-barcode-bars { width: calc(100% * 95 / 113); margin-left: calc(100% * 11 / 113); }
+.is-ean8  .pop-barcode-bars { width: calc(100% * 67 / 81);  margin-left: calc(100% * 7 / 81); }
+
+.pop-barcode-text {
+  padding-top: 0.2mm;
+  font-size: var(--pop-barcode-text-size, 7px);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--pop-text-main);
+  white-space: nowrap;
+}
+/* バーコードにできないJAN（桁数違い・チェックデジット誤り等）は数字だけ。高さはそろえて価格の位置がずれないようにする */
+.pop-barcode.is-text-only { padding: var(--pop-barcode-h, 6mm) 0.5mm 0; }
+
 /* ==========================================================================
    サイズ別 CSS変数スケール調整 (1カラム・タイトな行間調整版)
    ========================================================================== */
 
 /* A9タテ (37.125mm × 52.5mm: 1/32面) */
 .pop-size-a9 {
-  --pop-pad: 1.5mm 1mm;
+  --pop-barcode-w: 26mm;
+  --pop-barcode-bleed: 1.5mm;
+  --pop-barcode-h: 5mm;
+  --pop-barcode-text-size: 6px;
+  --pop-barcode-gap: 0.6mm;
   --pop-img-max-h: 9mm;
-  --pop-comment-size: 7.5px;
-  --pop-maker-size: 6.5px;
-  --pop-name-size: 9.5px;
-  --pop-qty-size: 6.5px;
-  --pop-badge-size: 6.5px;
+  --pop-comment-size: 8.5px;
+  --pop-maker-size: 8.5px;
+  --pop-name-size: 13.5px;
+  --pop-qty-size: 8.5px;
+  --pop-badge-size: 8.5px;
   --pop-price-size: 26px;
-  --pop-price-unit-size: 10px;
-  --pop-tax-incl-size: 7.5px;
+  --pop-price-unit-size: 8.5px;
+  --pop-tax-incl-size: 10px;
   --pop-risk-size: 6px;
 }
 
 /* A8ヨコ (74.25mm × 52.5mm: 1/16面) */
 .pop-size-a8 {
-  --pop-pad: 2mm 2.5mm;
+  --pop-barcode-w: 28mm;
+  --pop-barcode-h: 5.5mm;
+  --pop-barcode-text-size: 6.5px;
+  --pop-barcode-gap: 0.6mm;
   --pop-img-w: 34%;
   --pop-gap: 2mm;
   --pop-comment-size: 9px;
@@ -253,7 +306,10 @@
 
 /* A6ハーフ (148.5mm × 52.5mm: 1/8面) */
 .pop-size-a6half {
-  --pop-pad: 2mm 4mm;
+  --pop-barcode-w: 30mm;
+  --pop-barcode-h: 6mm;
+  --pop-barcode-text-size: 7px;
+  --pop-barcode-gap: 0.8mm;
   --pop-img-w: 30%;
   --pop-gap: 3mm;
   --pop-comment-size: 10.5px;
@@ -269,7 +325,12 @@
 
 /* A6ヨコ (148.5mm × 105mm: 1/4面) */
 .pop-size-a6 {
-  --pop-pad: 4mm 5mm;
+  --pop-barcode-w: 36mm;
+  --pop-barcode-h: 9mm;
+  --pop-barcode-text-size: 9px;
+  --pop-barcode-gap: 1.2mm;
+  --pop-pad-y: 4mm;
+  --pop-pad-x: 5mm;
   --pop-img-w: 32%;
   --pop-gap: 3.5mm;
   --pop-comment-size: 13px;
@@ -285,7 +346,12 @@
 
 /* A5ヨコ (210mm × 148.5mm: 1/2面) */
 .pop-size-a5 {
-  --pop-pad: 5mm 7mm;
+  --pop-barcode-w: 40mm;
+  --pop-barcode-h: 11mm;
+  --pop-barcode-text-size: 10px;
+  --pop-barcode-gap: 1.5mm;
+  --pop-pad-y: 5mm;
+  --pop-pad-x: 7mm;
   --pop-img-w: 30%;
   --pop-gap: 4mm;
   --pop-comment-size: 16px;
@@ -301,7 +367,12 @@
 
 /* A4ヨコ (297mm × 210mm: 1/1面) */
 .pop-size-a4 {
-  --pop-pad: 8mm 10mm;
+  --pop-barcode-w: 50mm;
+  --pop-barcode-h: 15mm;
+  --pop-barcode-text-size: 12px;
+  --pop-barcode-gap: 2mm;
+  --pop-pad-y: 8mm;
+  --pop-pad-x: 10mm;
   --pop-img-w: 28%;
   --pop-gap: 5mm;
   --pop-comment-size: 22px;

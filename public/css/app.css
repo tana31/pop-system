@@ -286,14 +286,13 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
 }
 .queue-card:hover { border-color: var(--c-indigo-300); }
 
-.queue-card__row {
+.queue-card__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: .5rem;
 }
-.queue-card__info { flex: 1; min-width: 240px; }
 .queue-card__meta {
   display: flex;
   align-items: center;
@@ -308,20 +307,70 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
   background: var(--c-slate-200);
   border-radius: .25rem;
 }
-.queue-card__name {
-  margin-top: .125rem;
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--c-slate-900);
+.queue-card__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
 }
-.queue-card__price {
-  margin-top: .125rem;
+
+/* 修正済みの表示（バッジと「マスタの値に戻す」は修正したカードだけに出す） */
+.edited-badge,
+.btn-reset { display: none; }
+.queue-card.is-edited { border-color: var(--c-amber-500); background: #fffbeb; }
+.queue-card.is-edited .edited-badge {
+  display: inline-block;
+  padding: .125rem .5rem;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 9999px;
+}
+.queue-card.is-edited .btn-reset {
+  display: inline-block;
+  padding: .5rem .625rem;
+  font-size: .75rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: .25rem;
+}
+.queue-card.is-edited .btn-reset:hover { background: #fde68a; }
+
+/* 商品情報の修正欄（12分割グリッド） */
+.item-form {
+  flex: 1 1 32rem;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: .5rem .75rem;
+}
+.item-field { display: flex; flex-direction: column; gap: .125rem; min-width: 0; }
+.item-field--span2 { grid-column: span 2; }
+.item-field--span3 { grid-column: span 3; }
+.item-field--span6 { grid-column: span 6; }
+.item-field__label { font-size: 10px; font-weight: 700; color: var(--c-slate-500); }
+
+.item-input {
+  width: 100%;
+  padding: .25rem .5rem;
   font-size: .875rem;
-  font-weight: 700;
-  color: var(--c-red-600);
+  background: #fff;
+  border: 1px solid var(--c-slate-300);
+  border-radius: .25rem;
+  outline: none;
 }
-.queue-card__price small { font-size: .75rem; font-weight: 400; color: var(--c-slate-500); }
+.item-input:focus { border-color: var(--c-indigo-400); box-shadow: 0 0 0 2px var(--c-indigo-200); }
+.item-input[data-key="name"] { font-weight: 700; color: var(--c-slate-900); }
+.item-input--price { text-align: right; font-weight: 700; }
+.item-input--incl { color: var(--c-red-600); }
+.item-input::placeholder { color: var(--c-slate-400); font-weight: 400; }
+
+@media (max-width: 767px) {
+  .item-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .item-field--span2, .item-field--span3 { grid-column: span 1; }
+  .item-field--span6 { grid-column: span 2; }
+}
 
 /* 枚数欄 */
 .count-group {

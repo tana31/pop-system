@@ -8,12 +8,12 @@
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/pop-styles.css">
 
-  <!-- PDF生成用ライブラリ（グローバル変数として使うので preview.js より前に同期読み込み） -->
+  <!-- PDF生成用ライブラリ（グローバル変数として使うので preview-app.js より前に同期読み込み） -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-  <!-- pop-config.js 等は preview.js から import される -->
-  <script type="module" src="js/preview.js"></script>
+  <!-- 他のファイルは preview-app.js から import される -->
+  <script type="module" src="js/preview/preview-app.js"></script>
 </head>
 <body class="preview-page">
 
@@ -28,8 +28,8 @@
         <label class="control">
           <span class="control__label">面付けモード:</span>
           <select id="modeSelect" class="select select--bold">
-            <option value="separated">規格ごとに用紙を分ける</option>
             <option value="mixed">1枚のA4に混載して節約 (自動面付け)</option>
+            <option value="separated">規格ごとに用紙を分ける</option>
           </select>
         </label>
 

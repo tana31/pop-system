@@ -12,9 +12,11 @@
  *     jan: string,        // 正規化済み（全角→半角、空白・ハイフン除去）
  *     name, maker, comment, qty1, qty2, risk: string,
  *     price: number,      // 税込価格
- *     priceExcl: number   // 税抜価格（列が空なら 税込 ÷ 1.1 を四捨五入）
+ *     priceExcl: number,  // 税抜価格（列が空なら 税込 ÷ 1.1 を四捨五入）
+ *     priceExclAuto: boolean // true = 税抜価格を税込から計算した（スキャン画面で税込を直すと追従する）
  *   }
  */
+import { calcPriceExcl } from '../shared/price.js';
 
 export const COLUMNS = {
   jan:       ['JANコード', 'JAN', 'jan'],
@@ -30,8 +32,6 @@ export const COLUMNS = {
 
 // 必須列（見つからなければコンソールに警告）
 export const REQUIRED_KEYS = ['jan', 'name', 'price'];
-
-const TAX_RATE = 1.1;
 
 /** JAN: 全角数字→半角、空白・ハイフン除去 */
 export function normalizeJan(value) {
@@ -81,7 +81,8 @@ export function createRowReader(headers) {
         name:      read(row, 'name'),
         maker:     read(row, 'maker'),
         price,
-        priceExcl: rawExcl ? parsePrice(rawExcl) : Math.round(price / TAX_RATE),
+        priceExcl: rawExcl ? parsePrice(rawExcl) : calcPriceExcl(price),
+        priceExclAuto: !rawExcl,
         comment:   read(row, 'comment'),
         qty1:      read(row, 'qty1'),
         qty2:      read(row, 'qty2'),
