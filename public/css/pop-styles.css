@@ -1,0 +1,319 @@
+:root {
+  /* --- 共通フォント・カラー設定 --- */
+  --pop-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  --pop-border-color: #cbd5e1;
+  --pop-border-style: dashed;
+  --pop-border-width: 0.5pt;
+
+  /* カラー定義 */
+  --pop-text-main: #0f172a;
+  --pop-text-sub: #64748b;
+  --pop-color-comment: #ea580c;
+  --pop-color-price-red: #dc2626;
+  --pop-color-price-black: #000000;
+  --pop-color-risk-bg: #dbeafe;
+  --pop-color-risk-text: #1e3a8a;
+
+  --pop-bg-standard: #ffffff;
+  --pop-bg-sale: #fffbeb;
+}
+
+/* A4 用紙スタイル (ミシン目にピッタリ合わせるため外枠余白0) */
+.a4-page {
+  background: var(--pop-bg-standard);
+  padding: 0 !important;
+  margin: 0 auto 20px auto;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  box-sizing: border-box;
+  page-break-after: always;
+  overflow: hidden;
+}
+
+.a4-page.portrait { width: 210mm; height: 297mm; }
+.a4-page.landscape { width: 297mm; height: 210mm; }
+
+/* --- POPセル 共通基本構造 (全サイズ1カラム縦積み) --- */
+.pop-cell {
+  box-sizing: border-box;
+  border: var(--pop-border-width) var(--pop-border-style) var(--pop-border-color);
+  font-family: var(--pop-font-sans);
+  background-color: var(--pop-bg-standard);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  text-align: left;
+  padding: var(--pop-pad, 2mm);
+  display: flex;
+}
+
+/* レイアウトパターン: A9タテ＝画像を上、それ以外＝画像を左に配置 */
+.pop-layout-top {
+  flex-direction: column;
+}
+
+.pop-layout-left {
+  flex-direction: row;
+  align-items: stretch;
+  gap: var(--pop-gap, 2mm);
+}
+
+/* テキスト要素をまとめるコンテナ（画像位置に関わらず内部は縦積み） */
+.pop-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.theme-sale { background-color: var(--pop-bg-sale) !important; }
+.price-standard { color: var(--pop-color-price-red); }
+.price-simple { color: var(--pop-color-price-black); }
+
+/* --- 画像エリア（上部/左部共通の基本スタイル） --- */
+.pop-image-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+.pop-image-container img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* 上部配置（A9タテ）: 横幅いっぱい・細長い画像エリア */
+.pop-layout-top .pop-image-container {
+  width: 100%;
+  max-height: var(--pop-img-max-h, 12mm);
+  margin-bottom: 1mm;
+}
+
+/* 左側配置（A9以外）: 高さいっぱいの画像エリア（幅はサイズごとに --pop-img-w で指定） */
+.pop-layout-left .pop-image-container {
+  flex: 0 0 var(--pop-img-w, 32%);
+  height: 100%;
+}
+
+/* --- 1カラム構成 要素スタイル（詰めた行間設定） --- */
+
+/* 1. コメント */
+.pop-comment {
+  font-size: var(--pop-comment-size);
+  font-weight: 800;
+  color: var(--pop-color-comment);
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 2. メーカー名 */
+.pop-maker {
+  font-size: var(--pop-maker-size);
+  font-weight: 700;
+  color: var(--pop-text-sub);
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 3. 商品名 */
+.pop-name {
+  font-size: var(--pop-name-size);
+  font-weight: 900;
+  color: var(--pop-text-main);
+  line-height: 1.1;
+  margin: 0.3mm 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 4 & 5. 数量1・数量2 */
+.pop-qty-group {
+  font-size: var(--pop-qty-size);
+  font-weight: 600;
+  color: #475569;
+  line-height: 1.05;
+  display: flex;
+  gap: 2px;
+}
+
+/* 6. 税抜き価格コンテナ（●税抜 ＋ ドカンと大文字価格 横並び） */
+.pop-tax-excl-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  margin-top: auto;
+  width: 100%;
+}
+
+/* 黒丸白文字「税抜」バッジ */
+.pop-tax-badge-black {
+  background-color: #000000;
+  color: #ffffff;
+  border-radius: 9999px;
+  padding: 1px 5px;
+  font-size: var(--pop-badge-size);
+  font-weight: 800;
+  white-space: nowrap;
+  line-height: 1.1;
+}
+
+/* 税抜き価格 */
+.pop-price-excl {
+  font-size: var(--pop-price-size);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -1px;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.pop-price-excl .unit {
+  font-size: var(--pop-price-unit-size);
+  font-weight: 800;
+  margin-left: 1px;
+  letter-spacing: normal;
+}
+
+/* 7. 区切り線 */
+.pop-divider {
+  border-bottom: 0.8pt solid var(--pop-text-main);
+  margin: 0.5mm 0 0.3mm 0;
+  width: 100%;
+}
+
+/* 8. 税込み価格（右寄せ） */
+.pop-tax-incl {
+  font-size: var(--pop-tax-incl-size);
+  font-weight: 800;
+  color: #1e293b;
+  line-height: 1.05;
+  text-align: right;
+  white-space: nowrap;
+  width: 100%;
+}
+
+/* 9. 医薬品リスク区分 */
+.pop-risk-tag {
+  font-size: var(--pop-risk-size);
+  font-weight: 800;
+  color: var(--pop-color-risk-text);
+  background-color: var(--pop-color-risk-bg);
+  border-radius: 2px;
+  text-align: center;
+  padding: 0.3mm 0;
+  line-height: 1.0;
+  margin-top: 0.3mm;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+/* ==========================================================================
+   サイズ別 CSS変数スケール調整 (1カラム・タイトな行間調整版)
+   ========================================================================== */
+
+/* A9タテ (37.125mm × 52.5mm: 1/32面) */
+.pop-size-a9 {
+  --pop-pad: 1.5mm 1mm;
+  --pop-img-max-h: 9mm;
+  --pop-comment-size: 7.5px;
+  --pop-maker-size: 6.5px;
+  --pop-name-size: 9.5px;
+  --pop-qty-size: 6.5px;
+  --pop-badge-size: 6.5px;
+  --pop-price-size: 26px;
+  --pop-price-unit-size: 10px;
+  --pop-tax-incl-size: 7.5px;
+  --pop-risk-size: 6px;
+}
+
+/* A8ヨコ (74.25mm × 52.5mm: 1/16面) */
+.pop-size-a8 {
+  --pop-pad: 2mm 2.5mm;
+  --pop-img-w: 34%;
+  --pop-gap: 2mm;
+  --pop-comment-size: 9px;
+  --pop-maker-size: 8px;
+  --pop-name-size: 12px;
+  --pop-qty-size: 8px;
+  --pop-badge-size: 8px;
+  --pop-price-size: 34px;
+  --pop-price-unit-size: 13px;
+  --pop-tax-incl-size: 9.5px;
+  --pop-risk-size: 7.5px;
+}
+
+/* A6ハーフ (148.5mm × 52.5mm: 1/8面) */
+.pop-size-a6half {
+  --pop-pad: 2mm 4mm;
+  --pop-img-w: 30%;
+  --pop-gap: 3mm;
+  --pop-comment-size: 10.5px;
+  --pop-maker-size: 9.5px;
+  --pop-name-size: 14px;
+  --pop-qty-size: 9.5px;
+  --pop-badge-size: 9.5px;
+  --pop-price-size: 38px;
+  --pop-price-unit-size: 15px;
+  --pop-tax-incl-size: 10.5px;
+  --pop-risk-size: 8.5px;
+}
+
+/* A6ヨコ (148.5mm × 105mm: 1/4面) */
+.pop-size-a6 {
+  --pop-pad: 4mm 5mm;
+  --pop-img-w: 32%;
+  --pop-gap: 3.5mm;
+  --pop-comment-size: 13px;
+  --pop-maker-size: 11.5px;
+  --pop-name-size: 18px;
+  --pop-qty-size: 11.5px;
+  --pop-badge-size: 12px;
+  --pop-price-size: 58px;
+  --pop-price-unit-size: 22px;
+  --pop-tax-incl-size: 14px;
+  --pop-risk-size: 11px;
+}
+
+/* A5ヨコ (210mm × 148.5mm: 1/2面) */
+.pop-size-a5 {
+  --pop-pad: 5mm 7mm;
+  --pop-img-w: 30%;
+  --pop-gap: 4mm;
+  --pop-comment-size: 16px;
+  --pop-maker-size: 14px;
+  --pop-name-size: 24px;
+  --pop-qty-size: 14px;
+  --pop-badge-size: 15px;
+  --pop-price-size: 80px;
+  --pop-price-unit-size: 30px;
+  --pop-tax-incl-size: 18px;
+  --pop-risk-size: 13px;
+}
+
+/* A4ヨコ (297mm × 210mm: 1/1面) */
+.pop-size-a4 {
+  --pop-pad: 8mm 10mm;
+  --pop-img-w: 28%;
+  --pop-gap: 5mm;
+  --pop-comment-size: 22px;
+  --pop-maker-size: 18px;
+  --pop-name-size: 34px;
+  --pop-qty-size: 18px;
+  --pop-badge-size: 20px;
+  --pop-price-size: 110px;
+  --pop-price-unit-size: 42px;
+  --pop-tax-incl-size: 24px;
+  --pop-risk-size: 17px;
+}

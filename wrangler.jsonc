@@ -1,0 +1,26 @@
+{
+  // Cloudflareダッシュボードに表示されるWorker名（Pagesの時のプロジェクト名と同じでOK）
+  "name": "pop-system",
+
+  // 今日の日付にしてください（Workersランタイムの互換性基準日）
+  "compatibility_date": "2026-09-27",
+
+  // APIロジック本体（旧 functions/api/*.js をまとめたもの）
+  "main": "./worker/index.js",
+
+  // 静的ファイル（index.html, preview.html, css, js）の配信設定
+  "assets": {
+    "directory": "./public/",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page"
+  },
+
+  // R2バケットとの接続（bucket_nameは実際のバケット名に書き換えてください）
+"r2_buckets": [
+  {
+    "binding": "MY_R2_BUCKET",
+    "bucket_name": "pop-system-assets",
+    "remote": true
+  }
+]
+}

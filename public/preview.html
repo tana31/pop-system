@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POP A4面付けPDFプレビュー</title>
+  
+  <!-- CSS定義（Tailwind + 独自POPスタイル） -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/pop-styles.css">
+
+  <!-- PDF生成用ライブラリ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- JavaScriptモジュール化読み込み -->
+  <script src="js/pop-config.js" defer></script>
+  <script src="js/preview.js" defer></script>
+</head>
+<body class="bg-slate-700 min-h-screen text-slate-800 pb-12">
+
+  <header class="bg-slate-900 text-white p-4 sticky top-0 z-50 shadow-xl border-b border-slate-700">
+    <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <button onclick="location.href='index.html'" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded text-sm font-bold border border-slate-600">
+          ← スキャン画面に戻る
+        </button>
+        <h1 class="font-bold text-lg flex items-center gap-2">
+          <span>📄</span> A4面付けPDFプレビュー
+        </h1>
+      </div>
+
+      <div class="flex items-center gap-4 text-sm">
+        <label class="flex items-center gap-2">
+          <span class="text-xs text-slate-300">面付けモード:</span>
+          <select id="modeSelect" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white font-bold">
+            <option value="separated">規格ごとに用紙を分ける</option>
+            <option value="mixed">1枚のA4に混載して節約 (自動面付け)</option>
+          </select>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <span class="text-xs text-slate-300">デザイン:</span>
+          <select id="themeSelect" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white">
+            <option value="standard">標準 (赤価格)</option>
+            <option value="sale">セール (黄赤)</option>
+            <option value="simple">モノクロ</option>
+          </select>
+        </label>
+
+        <button id="downloadPdfBtn" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black px-6 py-2 rounded-lg shadow-lg flex items-center gap-2">
+          <span>⬇️ A4-PDFファイルを直接ダウンロード</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto p-6">
+    <div id="statusInfo" class="mb-4 p-3 bg-slate-800 text-slate-200 text-xs font-mono rounded-lg border border-slate-600"></div>
+    <div id="pdfRenderArea"></div>
+  </main>
+
+</body>
+</html>

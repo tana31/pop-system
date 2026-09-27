@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POP作成システム - 高速連続スキャン</title>
+
+  <!-- スタイル定義 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- 外部ライブラリ -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <!-- アプリケーションモジュール -->
+  <script src="js/pop-config.js" defer></script>
+  <script src="js/scan-app.js" defer></script>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 pb-20">
+
+  <!-- ヘッダー -->
+  <header class="bg-indigo-900 text-white p-4 shadow-md sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold flex items-center gap-2">
+        <span>🏷️</span> POP高速スキャン＆一括印刷システム
+      </h1>
+      <div id="masterStatus" class="text-xs bg-amber-500 text-slate-900 px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5">
+        <span class="animate-spin text-sm">⏳</span> R2マスタ読み込み中...
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+
+    <!-- STEP 1: JANスキャン / あいまい検索 -->
+    <section class="bg-white p-5 rounded-xl shadow-md border-2 border-indigo-500 space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- バーコードスキャン -->
+        <div>
+          <label class="block text-xs font-bold text-indigo-900 mb-1">⚡ JANコード連続スキャン（Enterで即時追加）</label>
+          <input type="text" id="janInput" placeholder="バーコードをスキャン..." class="w-full text-xl p-3 border-2 border-indigo-600 rounded-lg focus:outline-none focus:ring-4 focus:ring-indigo-200 font-mono font-bold bg-indigo-50" disabled>
+        </div>
+
+        <!-- 商品名検索 -->
+        <div class="relative">
+          <label class="block text-xs font-bold text-slate-500 mb-1">🔍 商品名あいまい検索</label>
+          <input type="text" id="searchNameInput" placeholder="商品名の一部を入力..." class="w-full text-lg p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" disabled>
+          <div id="searchSuggestions" class="hidden absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-b-lg shadow-xl max-h-60 overflow-y-auto z-50"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 2: 印刷待機リスト -->
+    <section class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+      <div class="flex flex-wrap justify-between items-center gap-2">
+        <h2 class="font-bold text-lg text-slate-800 flex items-center gap-2">
+          <span>📋 印刷待機リスト</span>
+          <span id="queueCount" class="bg-indigo-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">0件</span>
+        </h2>
+        
+        <div class="flex items-center gap-3">
+          <button id="toggleAllOptionsBtn" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded font-bold border border-slate-300">
+            ⚙️ 全行のオプションサイズ表示切替
+          </button>
+          <button id="clearQueueBtn" class="text-xs text-red-600 hover:underline">リストを全クリア</button>
+        </div>
+      </div>
+
+      <!-- スキャン通知バナー -->
+      <div id="scanNotice" class="hidden bg-emerald-100 border border-emerald-400 text-emerald-800 px-4 py-2 rounded-lg text-sm font-bold flex justify-between items-center">
+        <span id="scanNoticeText"></span>
+        <span class="text-xs text-emerald-600">リスト先頭に追加しました</span>
+      </div>
+
+      <!-- 印刷リスト一覧コンテナ -->
+      <div id="queueListContainer" class="space-y-3">
+        <div id="emptyQueueMessage" class="text-center py-12 text-slate-400 font-bold border-2 border-dashed border-slate-200 rounded-xl">
+          JANコードをスキャンすると、ここに商品が追加されます。
+        </div>
+      </div>
+
+      <!-- アクションボタン -->
+      <div class="pt-4 flex justify-end">
+        <button id="generatePopBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-lg px-8 py-3 rounded-lg shadow-lg flex items-center gap-2">
+          <span>🖨️ 印刷プレビュー・PDF出力画面へ進む</span>
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+</body>
+</html>
