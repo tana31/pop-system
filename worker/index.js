@@ -139,7 +139,7 @@ async function handleThemeImage(filename, env) {
   }
 
   try {
-    const object = await env.MY_R2_BUCKET.get(`themes/${filename}`);
+    const object = await env.MY_R2_BUCKET.get(`images/${filename}`);
 
     if (!object) {
       return new Response('Not Found', { status: 404 });

@@ -1,4 +1,6 @@
 let queueData = [];
+const THEMES_URL = '/api/themes'; // デザイン(テーマ)マニフェストAPIエンドポイント
+let themesById = {};
 
 document.addEventListener('DOMContentLoaded', () => {
   const pdfRenderArea = document.getElementById('pdfRenderArea');
@@ -8,11 +10,38 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusInfo = document.getElementById('statusInfo');
 
   loadQueueData();
-  buildA4Pages();
+  loadThemes();
 
   themeSelect.addEventListener('change', buildA4Pages);
   modeSelect.addEventListener('change', buildA4Pages);
   downloadPdfBtn.addEventListener('click', handleDownloadPdf);
+
+  // --- デザイン(テーマ)一覧の読み込み ---
+  async function loadThemes() {
+    try {
+      const response = await fetch(THEMES_URL);
+      if (!response.ok) throw new Error('デザイン一覧の取得に失敗しました');
+      const list = await response.json();
+
+      themesById = {};
+      themeSelect.innerHTML = '';
+
+      list.forEach(theme => {
+        themesById[theme.id] = theme;
+        const opt = document.createElement('option');
+        opt.value = theme.id;
+        opt.textContent = theme.name || theme.id;
+        themeSelect.appendChild(opt);
+      });
+
+      if (list.length > 0) themeSelect.value = list[0].id;
+    } catch (err) {
+      console.error(err);
+      themeSelect.innerHTML = '<option value="">⚠️ デザイン読み込み失敗</option>';
+    } finally {
+      buildA4Pages();
+    }
+  }
 
   function loadQueueData() {
     try {
@@ -38,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function buildA4Pages() {
     if (!pdfRenderArea) return;
     pdfRenderArea.innerHTML = '';
-    const theme = themeSelect.value;
+    const theme = themesById[themeSelect.value] || {};
     const mode = modeSelect.value;
     let renderedPages = 0;
 
@@ -219,7 +248,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const cell = document.createElement('div');
     const layoutClass = conf.isVertical ? 'pop-layout-top' : 'pop-layout-left';
     cell.className = `pop-cell ${conf.cssClass} ${layoutClass}`;
-    if (theme === 'sale') cell.classList.add('theme-sale');
+
+    // デザイン(テーマ)側で定義された色をCSS変数として上書き（本社側でR2マニフェストを更新すれば反映される）
+    if (theme.bgColor) cell.style.setProperty('--pop-bg-standard', theme.bgColor);
+    if (theme.commentColor) cell.style.setProperty('--pop-color-comment', theme.commentColor);
+    if (theme.priceColor) cell.style.setProperty('--pop-color-price-red', theme.priceColor);
 
     const comment  = item['コメント'] || item['アピール文'] || '';
     const maker    = item['製造メーカー'] || item['メーカー'] || '';
@@ -227,15 +260,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const qty1     = item['数量1'] || item['内容量'] || '';
     const qty2     = item['数量2'] || item['規格'] || '';
     const risk     = item['リスク分類'] || item['医薬品区分'] || '';
-    const imageUrl = item['画像URL'] || item['画像'] || item['image'] || item['画像パス'] || '';
+
+    // 画像は商品ごとではなく、選択中のデザイン(テーマ)に登録されたものを使用
+    const imageUrl = theme.image ? `/api/theme-image/${theme.image}` : '';
 
     const priceTaxIncl = Number(item['販売価格(税込)'] || item['税込価格'] || 0);
     const priceTaxExcl = item['販売価格(税抜)'] || item['税抜価格'] 
       ? Number(item['販売価格(税抜)'] || item['税抜価格'])
       : Math.round(priceTaxIncl / 1.1);
 
-    let priceClass = theme === 'simple' ? 'price-simple' : 'price-standard';
-    const imageHtml = imageUrl ? `<div class="pop-image-container"><img src="${imageUrl}" alt=""></div>` : '';
+    const imageHtml = imageUrl
+      ? `<div class="pop-image-container"><img src="${imageUrl}" alt="" onerror="this.parentElement.remove()"></div>`
+      : '';
 
     cell.innerHTML = `
       ${imageHtml}
@@ -249,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="pop-tax-excl-container">
           <span class="pop-tax-badge-black">税抜</span>
-          <div class="pop-price-excl ${priceClass}">
+          <div class="pop-price-excl">
             ${priceTaxExcl.toLocaleString()}<span class="unit">円</span>
           </div>
         </div>

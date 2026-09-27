@@ -10,12 +10,9 @@
   --pop-text-sub: #64748b;
   --pop-color-comment: #ea580c;
   --pop-color-price-red: #dc2626;
-  --pop-color-price-black: #000000;
-  --pop-color-risk-bg: #dbeafe;
   --pop-color-risk-text: #1e3a8a;
 
   --pop-bg-standard: #ffffff;
-  --pop-bg-sale: #fffbeb;
 }
 
 /* A4 用紙スタイル (ミシン目にピッタリ合わせるため外枠余白0) */
@@ -66,10 +63,6 @@
   flex-direction: column;
   justify-content: space-between;
 }
-
-.theme-sale { background-color: var(--pop-bg-sale) !important; }
-.price-standard { color: var(--pop-color-price-red); }
-.price-simple { color: var(--pop-color-price-black); }
 
 /* --- 画像エリア（上部/左部共通の基本スタイル） --- */
 .pop-image-container {
@@ -175,6 +168,7 @@
   letter-spacing: -1px;
   white-space: nowrap;
   text-align: right;
+  color: var(--pop-color-price-red);
 }
 
 .pop-price-excl .unit {
@@ -207,9 +201,7 @@
   font-size: var(--pop-risk-size);
   font-weight: 800;
   color: var(--pop-color-risk-text);
-  background-color: var(--pop-color-risk-bg);
-  border-radius: 2px;
-  text-align: center;
+  text-align: left;
   padding: 0.3mm 0;
   line-height: 1.0;
   margin-top: 0.3mm;
