@@ -122,9 +122,8 @@
   color: var(--pop-text-main);
   line-height: 1.1;
   margin: 0.3mm 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  /* 2行で打ち切り（-webkit-line-clamp は html2canvas 非対応のため高さで制限） */
+  max-height: calc(var(--pop-name-size) * 1.1 * 2);
   overflow: hidden;
 }
 
@@ -308,4 +307,12 @@
   --pop-price-unit-size: 42px;
   --pop-tax-incl-size: 24px;
   --pop-risk-size: 17px;
+}
+
+/* html2canvas の文字位置ずれ対策
+   Tailwind preflight の img{display:block} により、html2canvas が文字のベースラインを
+   誤計測してPDF上の全テキストが下にずれるため、img をインライン要素に戻す。
+   （POP画像はflexアイテムなので表示には影響しません） */
+body img {
+  display: inline-block;
 }

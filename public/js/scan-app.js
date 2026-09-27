@@ -1,12 +1,23 @@
 /**
  * スキャン・印刷キュー管理アプリケーション
+ * マスタの取得・解析・検索は Web Worker (master-worker.js) が担当し、
+ * このファイル（メインスレッド）は画面操作だけを行う。
  */
-const R2_MASTER_URL = '/api/master'; // R2マスタデータAPIエンドポイント
+const MASTER_WORKER_URL = '/js/master-worker.js';
+const QUEUE_STORAGE_KEY = 'pop_print_queue';
 
-let masterArray = [];
-let masterJanMap = new Map();
 let popQueue = [];
 let globalOptionsVisible = false;
+
+// ---- ユーティリティ ----
+function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+const getName = item => item['品名'] || item['商品名'] || '';
+const getJan = item => item['JANコード'] || item['JAN'] || item['jan'] || '';
+const getPrice = item => Number(item['販売価格(税込)'] || item['税込価格'] || 0);
 
 document.addEventListener('DOMContentLoaded', () => {
   // DOM要素取得
@@ -23,46 +34,166 @@ document.addEventListener('DOMContentLoaded', () => {
   const scanNotice = document.getElementById('scanNotice');
   const scanNoticeText = document.getElementById('scanNoticeText');
 
-  // 初期化：R2からマスタを取得
-  fetchMasterFromR2();
+  // ============================================================
+  // マスタ Worker との通信
+  // ============================================================
+  const masterWorker = new Worker(MASTER_WORKER_URL);
+  let requestSeq = 0;
+  const pendingRequests = new Map();
 
-  // イベントリスナー設定
+  function askMaster(type, payload = {}) {
+    return new Promise((resolve) => {
+      const id = ++requestSeq;
+      pendingRequests.set(id, resolve);
+      masterWorker.postMessage({ type, id, ...payload });
+    });
+  }
+
+  masterWorker.onmessage = (e) => {
+    const msg = e.data || {};
+    if (msg.type === 'result') {
+      const resolve = pendingRequests.get(msg.id);
+      if (resolve) {
+        pendingRequests.delete(msg.id);
+        resolve(msg.data);
+      }
+    } else if (msg.type === 'status') {
+      handleMasterStatus(msg);
+    }
+  };
+
+  masterWorker.onerror = (err) => {
+    console.error(err);
+    setStatus('error', '⚠️ マスタ処理でエラーが発生しました');
+  };
+
+  const STATUS_CLASSES = {
+    loading: 'text-xs bg-amber-500 text-slate-900 px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5',
+    ready: 'text-xs bg-emerald-800 text-white px-3 py-1.5 rounded-full border border-emerald-700 font-bold',
+    warn: 'text-xs bg-amber-600 text-white px-3 py-1.5 rounded-full font-bold',
+    error: 'text-xs bg-red-600 text-white px-3 py-1.5 rounded-full font-bold'
+  };
+
+  function setStatus(kind, text) {
+    if (!masterStatus) return;
+    masterStatus.className = STATUS_CLASSES[kind];
+    masterStatus.textContent = text;
+  }
+
+  function handleMasterStatus(msg) {
+    const count = (msg.count || 0).toLocaleString();
+    switch (msg.state) {
+      case 'loading':
+        setStatus('loading', `⏳ ${msg.message}`);
+        break;
+      case 'ready':
+        setStatus('ready', msg.source === 'cache'
+          ? `マスタ読込: ${count}件（最新を確認中…）`
+          : `マスタ同期完了: ${count}件`);
+        enableInputs();
+        break;
+      case 'verified':
+        setStatus('ready', `マスタ同期完了: ${count}件`);
+        break;
+      case 'updated':
+        setStatus('ready', `マスタ更新済み: ${count}件`);
+        break;
+      case 'stale':
+        setStatus('warn', `⚠️ サーバー接続不可・保存済みマスタ使用中: ${count}件`);
+        break;
+      case 'error':
+        setStatus('error', `⚠️ ${msg.message}`);
+        break;
+    }
+  }
+
+  let inputsEnabled = false;
+  function enableInputs() {
+    if (inputsEnabled) return;
+    inputsEnabled = true;
+    if (janInput) janInput.disabled = false;
+    if (searchNameInput) searchNameInput.disabled = false;
+    // 商品名検索に入力中でなければスキャン欄にフォーカス
+    if (janInput && document.activeElement !== searchNameInput) janInput.focus();
+  }
+
+  // ============================================================
+  // 印刷待機リストの保存・復元（ブラウザバック対策）
+  // ============================================================
+  function restoreQueue() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(QUEUE_STORAGE_KEY) || '[]');
+      popQueue = Array.isArray(saved) ? saved.filter(q => q && q.item && q.counts) : [];
+    } catch (e) {
+      popQueue = [];
+    }
+  }
+
+  function saveQueue() {
+    try {
+      localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(popQueue));
+    } catch (e) {
+      console.warn('印刷リストの保存に失敗しました', e);
+    }
+  }
+
+  // bfcache から復元された場合も最新のリストを反映
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+      restoreQueue();
+      renderQueueList();
+    }
+  });
+
+  // ============================================================
+  // 初期化
+  // ============================================================
+  restoreQueue();
+  renderQueueList();
+  masterWorker.postMessage({ type: 'init' });
+
+  // ============================================================
+  // イベントリスナー
+  // ============================================================
   if (janInput) {
-    janInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const jan = janInput.value.trim();
-        if (!jan) return;
+    janInput.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
 
-        const item = masterJanMap.get(jan);
-        if (item) {
-          addItemToQueue(item);
-          janInput.value = '';
-          showScanNotice(`「${item['品名'] || item['商品名']}」を追加しました`);
-        } else {
-          alert('該当するJANコードが見つかりません。');
-        }
+      const jan = janInput.value.trim();
+      janInput.value = '';          // 連続スキャンに備えて即クリア
+      if (!jan) return;
+
+      const item = await askMaster('lookup', { jan });
+      if (item) {
+        addItemToQueue(item);
+        showScanNotice(`「${getName(item)}」を追加しました`);
+      } else {
+        showScanNotice(`JAN ${jan} はマスタに見つかりませんでした`, true);
       }
     });
   }
 
   if (searchNameInput) {
+    let searchTimer = null;
+    let searchSeq = 0;
+
     searchNameInput.addEventListener('input', () => {
-      const keyword = searchNameInput.value.trim().toLowerCase();
-      if (!keyword || masterArray.length === 0) {
+      clearTimeout(searchTimer);
+      const keyword = searchNameInput.value.trim();
+
+      if (!keyword) {
+        searchSeq++; // 実行中の検索結果を破棄
         searchSuggestions.classList.add('hidden');
         return;
       }
 
-      const matches = [];
-      for (let i = 0; i < masterArray.length; i++) {
-        const name = String(masterArray[i]['品名'] || masterArray[i]['商品名'] || '').toLowerCase();
-        if (name.includes(keyword)) {
-          matches.push(masterArray[i]);
-          if (matches.length >= 20) break;
-        }
-      }
-
-      renderSuggestions(matches);
+      searchTimer = setTimeout(async () => {
+        const seq = ++searchSeq;
+        const matches = await askMaster('search', { keyword, limit: 20 });
+        if (seq !== searchSeq) return; // 古い検索結果は表示しない
+        renderSuggestions(matches);
+      }, 150);
     });
   }
 
@@ -89,69 +220,34 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('印刷待機リストに商品がありません。');
         return;
       }
-      localStorage.setItem('pop_print_queue', JSON.stringify(popQueue));
+      saveQueue();
       window.location.href = 'preview.html';
     });
   }
 
-  // --- R2マスタデータ読み込み ---
-  async function fetchMasterFromR2() {
-    try {
-      const response = await fetch(R2_MASTER_URL);
-      if (!response.ok) throw new Error('R2からのマスタデータ取得に失敗しました');
-
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await response.json();
-        processMasterData(data);
-      } else {
-        const csvText = await response.text();
-        if (window.Papa) {
-          Papa.parse(csvText, {
-            header: true,
-            skipEmptyLines: true,
-            complete: (results) => processMasterData(results.data)
-          });
-        }
-      }
-    } catch (err) {
-      console.error(err);
-      if (masterStatus) {
-        masterStatus.textContent = '⚠️ マスタ読み込み失敗';
-        masterStatus.className = 'text-xs bg-red-600 text-white px-3 py-1.5 rounded-full font-bold';
-      }
-    }
-  }
-
-  function processMasterData(data) {
-    masterArray = data;
-    masterJanMap.clear();
-
-    masterArray.forEach(item => {
-      const jan = String(item['JAN'] || item['JANコード'] || item['jan'] || '').trim();
-      if (jan) masterJanMap.set(jan, item);
-    });
-
-    if (masterStatus) {
-      masterStatus.textContent = `マスタ同期完了: ${masterArray.length.toLocaleString()}件`;
-      masterStatus.className = 'text-xs bg-emerald-800 text-white px-3 py-1.5 rounded-full border border-emerald-700 font-bold';
-    }
-
-    if (janInput) janInput.disabled = false;
-    if (searchNameInput) searchNameInput.disabled = false;
-    if (janInput) janInput.focus();
-  }
-
-  function showScanNotice(text) {
+  // ============================================================
+  // 画面描画
+  // ============================================================
+  let noticeTimer = null;
+  function showScanNotice(text, isError = false) {
     if (!scanNotice || !scanNoticeText) return;
+    const subText = scanNotice.lastElementChild;
+
     scanNoticeText.textContent = text;
-    scanNotice.classList.remove('hidden');
-    setTimeout(() => scanNotice.classList.add('hidden'), 2500);
+    scanNotice.className = isError
+      ? 'bg-red-100 border border-red-400 text-red-800 px-4 py-2 rounded-lg text-sm font-bold flex justify-between items-center'
+      : 'bg-emerald-100 border border-emerald-400 text-emerald-800 px-4 py-2 rounded-lg text-sm font-bold flex justify-between items-center';
+    if (subText && subText !== scanNoticeText) {
+      subText.textContent = isError ? '' : 'リスト先頭に追加しました';
+    }
+
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => scanNotice.classList.add('hidden'), isError ? 4000 : 2500);
   }
 
   function renderSuggestions(list) {
     if (!searchSuggestions) return;
-    if (list.length === 0) {
+    if (!list || list.length === 0) {
       searchSuggestions.classList.add('hidden');
       return;
     }
@@ -159,18 +255,18 @@ document.addEventListener('DOMContentLoaded', () => {
     searchSuggestions.innerHTML = list.map((item, idx) => `
       <div data-idx="${idx}" class="suggestion-item p-3 hover:bg-indigo-50 cursor-pointer border-b text-sm flex justify-between items-center">
         <div>
-          <div class="font-bold text-slate-800">${item['品名'] || item['商品名']}</div>
-          <div class="text-xs text-slate-500">${item['製造メーカー'] || ''} / JAN: ${item['JANコード'] || item['JAN'] || ''}</div>
+          <div class="font-bold text-slate-800">${escapeHtml(getName(item))}</div>
+          <div class="text-xs text-slate-500">${escapeHtml(item['製造メーカー'] || '')} / JAN: ${escapeHtml(getJan(item))}</div>
         </div>
-        <div class="font-bold text-red-600">¥${Number(item['販売価格(税込)'] || item['税込価格'] || 0).toLocaleString()}</div>
+        <div class="font-bold text-red-600">¥${getPrice(item).toLocaleString()}</div>
       </div>
     `).join('');
 
     searchSuggestions.classList.remove('hidden');
 
-    document.querySelectorAll('.suggestion-item').forEach((el, index) => {
+    searchSuggestions.querySelectorAll('.suggestion-item').forEach((el) => {
       el.addEventListener('click', () => {
-        addItemToQueue(list[index]);
+        addItemToQueue(list[Number(el.dataset.idx)]);
         searchSuggestions.classList.add('hidden');
         if (searchNameInput) searchNameInput.value = '';
         if (janInput) janInput.focus();
@@ -179,8 +275,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function addItemToQueue(item) {
-    const jan = item['JANコード'] || item['JAN'];
-    const existingIdx = popQueue.findIndex(q => (q.item['JANコード'] || q.item['JAN']) === jan);
+    const jan = getJan(item);
+    const existingIdx = popQueue.findIndex(q => getJan(q.item) === jan);
 
     if (existingIdx >= 0) {
       popQueue[existingIdx].counts.a8 += 1;
@@ -198,6 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderQueueList() {
+    saveQueue();
     if (!queueListContainer) return;
 
     if (queueCount) queueCount.textContent = `${popQueue.length}件`;
@@ -212,10 +309,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     popQueue.forEach((q, idx) => {
       const item = q.item;
-      const jan = item['JANコード'] || item['JAN'] || '';
-      const name = item['品名'] || item['商品名'] || '';
-      const maker = item['製造メーカー'] || item['メーカー'] || '';
-      const price = Number(item['販売価格(税込)'] || item['税込価格'] || 0).toLocaleString();
+      const jan = escapeHtml(getJan(item));
+      const name = escapeHtml(getName(item));
+      const maker = escapeHtml(item['製造メーカー'] || item['メーカー'] || '');
+      const price = getPrice(item).toLocaleString();
 
       const card = document.createElement('div');
       card.className = 'bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm hover:border-indigo-300 transition space-y-3';
@@ -282,16 +379,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // イベントバインディング（枚数変更・削除・トグル）
-    document.querySelectorAll('.count-input').forEach(input => {
+    queueListContainer.querySelectorAll('.count-input').forEach(input => {
       input.addEventListener('change', (e) => {
         const idx = parseInt(e.target.dataset.idx, 10);
         const field = e.target.dataset.field;
-        const val = parseInt(e.target.value, 10) || 0;
+        const val = Math.max(0, parseInt(e.target.value, 10) || 0);
         popQueue[idx].counts[field] = val;
+        saveQueue();
       });
     });
 
-    document.querySelectorAll('[data-action="toggle-opt"]').forEach(btn => {
+    queueListContainer.querySelectorAll('[data-action="toggle-opt"]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.currentTarget.dataset.idx, 10);
         popQueue[idx].showOptions = !popQueue[idx].showOptions;
@@ -299,7 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    document.querySelectorAll('[data-action="remove"]').forEach(btn => {
+    queueListContainer.querySelectorAll('[data-action="remove"]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.currentTarget.dataset.idx, 10);
         popQueue.splice(idx, 1);
