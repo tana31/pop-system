@@ -1,16 +1,25 @@
 /**
- * 商品マスタ専用 Web Worker
- *  - マスタの取得・JSON解析・索引作成をすべてここで行う（画面は固まらない）
+ * 商品マスタ専用 Web Worker（モジュールWorker）
+ *  - マスタの取得・索引作成・検索をすべてここで行う（画面は固まらない）
  *  - 取得したマスタは IndexedDB に保存し、次回以降は即座に利用
  *  - 裏でサーバーにバージョン確認し、変わっていれば自動で差し替え
+ *  - 列名の解決はここで完結し、画面には変換済みの「商品データ」だけを渡す
  *
- * メインスレッドとのメッセージ:
+ * 起動: new Worker(new URL('./master-worker.js', import.meta.url), { type: 'module' })
+ *
+ * メッセージ:
  *   受信: {type:'init'} / {type:'lookup', id, jan} / {type:'search', id, keyword, limit}
- *   送信: {type:'status', state, ...} / {type:'result', id, data}
+ *   送信: {type:'status', state, count?, message?} / {type:'result', id, data}
+ *
+ * state の種類（画面の表示と1対1）:
+ *   loading   … キャッシュが無く、初回ダウンロード・解析中
+ *   checking  … キャッシュで利用開始、裏で最新を確認中
+ *   synced    … 最新のマスタで利用中
+ *   updated   … キャッシュが古かったので最新に差し替えた
+ *   offline   … サーバーに接続できず、キャッシュで利用中
+ *   error     … キャッシュも無く、取得にも失敗
  */
-// 列名の定義・値の正規化は画面側と共通のファイルを使う
-importScripts('/js/master-schema.js');
-const { COLUMNS, normalizeJan } = self.MasterSchema;
+import { normalizeJan, createRowReader, findMissingRequired, COLUMNS } from './master-schema.js';
 
 const API_URL = '/api/master';
 const DB_NAME = 'pop-master-cache';
@@ -18,12 +27,10 @@ const DB_VERSION = 1;
 const STORE = 'master';
 const RECORD_KEY = 'current';
 
-let headers = [];
 let rows = [];
-let janIndex = new Map();   // JAN → 行番号
+let reader = null;
+let janIndex = new Map();   // JAN → 行番号（同じJANが複数あれば後ろの行が優先）
 let nameIndex = [];         // 正規化済み商品名（検索用）
-let janCols = [];
-let nameCols = [];
 
 let initialized = false;
 let resolveReady;
@@ -51,7 +58,7 @@ function reply(id, data) {
 }
 
 function postStatus(state, extra = {}) {
-  self.postMessage({ type: 'status', state, ...extra });
+  self.postMessage({ type: 'status', state, count: rows.length, ...extra });
 }
 
 // ------------------------------------------------------------
@@ -65,10 +72,10 @@ async function init() {
     console.warn('[master-worker] IndexedDB読み込み失敗', err);
   }
 
-  if (cached && Array.isArray(cached.headers) && Array.isArray(cached.rows)) {
+  if (isValidMaster(cached)) {
     buildIndex(cached);
     resolveReady();
-    postStatus('ready', { source: 'cache', count: rows.length });
+    postStatus('checking');
   } else {
     cached = null;
     postStatus('loading', { message: 'マスタをダウンロード中...' });
@@ -76,12 +83,12 @@ async function init() {
 
   try {
     const reqHeaders = {};
-    if (cached && cached.version) reqHeaders['If-None-Match'] = cached.version;
+    if (cached?.version) reqHeaders['If-None-Match'] = cached.version;
 
     const res = await fetch(API_URL, { cache: 'no-store', headers: reqHeaders });
 
     if (res.status === 304) {
-      postStatus('verified', { count: rows.length });
+      postStatus('synced');
       return;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -89,105 +96,82 @@ async function init() {
     if (!cached) postStatus('loading', { message: 'マスタを解析中...' });
 
     const data = await res.json();
-    if (!Array.isArray(data.headers) || !Array.isArray(data.rows)) {
-      throw new Error('マスタの形式が不正です');
-    }
-    warnMissingColumns(data.headers);
+    if (!isValidMaster(data)) throw new Error('マスタの形式が不正です');
+
+    findMissingRequired(data.headers).forEach(key => {
+      console.warn(`[master-worker] 「${key}」の列が見つかりません。master-schema.js の COLUMNS.${key} を確認してください。候補: ${COLUMNS[key].join(', ')}`);
+    });
 
     buildIndex(data);
     resolveReady();
-    postStatus(cached ? 'updated' : 'ready', { source: 'network', count: rows.length });
+    postStatus(cached ? 'updated' : 'synced');
 
     idbPut(data).catch(err => console.warn('[master-worker] IndexedDB保存失敗', err));
 
   } catch (err) {
     console.error('[master-worker]', err);
     if (cached) {
-      postStatus('stale', { count: rows.length, message: err.message });
+      postStatus('offline', { message: err.message });
     } else {
       postStatus('error', { message: 'マスタ読み込み失敗' });
     }
   }
 }
 
+function isValidMaster(data) {
+  return !!data && Array.isArray(data.headers) && Array.isArray(data.rows);
+}
+
 // ------------------------------------------------------------
 // 索引作成
 // ------------------------------------------------------------
-function normalize(s) {
+function normalizeName(s) {
   // 全角英数・半角カナなどを揃えて、大文字小文字を区別しない
   return String(s ?? '').normalize('NFKC').toLowerCase();
 }
 
-function findCols(names) {
-  return names.map(n => headers.indexOf(n)).filter(i => i >= 0);
-}
-
-function firstValue(row, cols) {
-  for (const c of cols) {
-    const v = row[c];
-    if (v != null && String(v).trim() !== '') return String(v).trim();
-  }
-  return '';
-}
-
 function buildIndex(data) {
-  headers = data.headers;
-  rows = data.rows;
-  janCols = findCols(COLUMNS.jan);
-  nameCols = findCols(COLUMNS.name);
-
+  const newReader = createRowReader(data.headers);
+  const newRows = data.rows;
   const newJanIndex = new Map();
-  const newNameIndex = new Array(rows.length);
+  const newNameIndex = new Array(newRows.length);
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const jan = normalizeJan(firstValue(row, janCols));
+  for (let i = 0; i < newRows.length; i++) {
+    const row = newRows[i];
+    const jan = newReader.jan(row);
     if (jan) newJanIndex.set(jan, i);
-    newNameIndex[i] = normalize(firstValue(row, nameCols));
+    newNameIndex[i] = normalizeName(newReader.name(row));
   }
 
+  // 検索中に中途半端な状態が見えないよう、最後にまとめて差し替える
+  rows = newRows;
+  reader = newReader;
   janIndex = newJanIndex;
   nameIndex = newNameIndex;
 }
 
-// 必須列が見つからない場合はコンソールに警告（列名変更に気づくため）
-function warnMissingColumns(hdrs) {
-  ['jan', 'name', 'price'].forEach(key => {
-    if (!COLUMNS[key].some(col => hdrs.includes(col))) {
-      console.warn(`[master-worker] 「${key}」の列が見つかりません。master-schema.js の COLUMNS.${key} を確認してください。候補: ${COLUMNS[key].join(', ')}`);
-    }
-  });
-}
-
-function toObject(i) {
-  const row = rows[i];
-  const obj = {};
-  for (let c = 0; c < headers.length; c++) obj[headers[c]] = row[c] ?? '';
-  return obj;
-}
-
 // ------------------------------------------------------------
-// 検索
+// 検索（結果は商品データの形で返す）
 // ------------------------------------------------------------
 function lookup(jan) {
   const key = normalizeJan(jan);
   if (!key) return null;
   const idx = janIndex.get(key);
-  return idx === undefined ? null : toObject(idx);
+  return idx === undefined ? null : reader.toItem(rows[idx]);
 }
 
 function search(keyword, limit) {
-  const kw = normalize(keyword).trim();
+  const kw = normalizeName(keyword).trim();
   if (!kw) return [];
   const out = [];
   for (let i = 0; i < nameIndex.length && out.length < limit; i++) {
-    if (nameIndex[i].includes(kw)) out.push(toObject(i));
+    if (nameIndex[i].includes(kw)) out.push(reader.toItem(rows[i]));
   }
   return out;
 }
 
 // ------------------------------------------------------------
-// IndexedDB ヘルパー
+// IndexedDB ヘルパー（サーバー応答 {version, headers, rows} をそのまま保存）
 // ------------------------------------------------------------
 function openDb() {
   return new Promise((resolve, reject) => {

@@ -1,9 +1,9 @@
 /**
  * POPセル（1枚分）のDOM生成
  */
-import { THEME_IMAGE_BASE_URL, SIZES_WITH_DEDICATED_IMAGE, MasterSchema } from './constants.js';
+import { THEME_IMAGE_BASE_URL, SIZES_WITH_DEDICATED_IMAGE } from './constants.js';
 
-// 商品データの列名は js/master-schema.js（COLUMNS）で一元管理している
+// item はマスタWorkerが変換済みの商品データ（形は js/master-schema.js 冒頭を参照）
 
 // テーマの設定項目 → CSS変数
 const THEME_CSS_VARS = {
@@ -12,25 +12,23 @@ const THEME_CSS_VARS = {
   priceColor:   '--pop-color-price-red'
 };
 
-const TAX_RATE = 1.1;
-
 /** POPセルを生成 */
-export function createPopCell(conf, rawItem, theme) {
+export function createPopCell(conf, item, theme) {
   const cell = document.createElement('div');
   const layoutClass = conf.isVertical ? 'pop-layout-top' : 'pop-layout-left';
   cell.className = `pop-cell ${conf.cssClass} ${layoutClass}`;
 
   applyThemeColors(cell, theme);
 
-  const d = normalizeItem(rawItem);
+  const d = item;
   cell.innerHTML = `
     <div class="pop-content">
       <div class="pop-comment">${escapeHtml(d.comment)}</div>
       <div class="pop-maker">${escapeHtml(d.maker)}</div>
       <div class="pop-name">${escapeHtml(d.name)}</div>
       <div class="pop-qty-group">
-        <span class="truncate">${escapeHtml(d.qty1)}</span>
-        <span class="truncate">${escapeHtml(d.qty2)}</span>
+        <span class="pop-qty">${escapeHtml(d.qty1)}</span>
+        <span class="pop-qty">${escapeHtml(d.qty2)}</span>
       </div>
       <div class="pop-tax-excl-container">
         <span class="pop-tax-badge-black">税抜</span>
@@ -39,7 +37,7 @@ export function createPopCell(conf, rawItem, theme) {
         </div>
       </div>
       <div class="pop-divider"></div>
-      <div class="pop-tax-incl">(税込) ${d.priceIncl.toLocaleString()}円</div>
+      <div class="pop-tax-incl">(税込) ${d.price.toLocaleString()}円</div>
       <div class="pop-risk-tag">${escapeHtml(d.risk)}</div>
     </div>
   `;
@@ -48,26 +46,6 @@ export function createPopCell(conf, rawItem, theme) {
   if (image) cell.prepend(createImageContainer(image.src, image.fallback));
 
   return cell;
-}
-
-/** 列名の揺れを吸収し、価格を数値化（¥・カンマ・全角数字なども正しく読む） */
-function normalizeItem(item = {}) {
-  const { pick, parsePrice } = MasterSchema;
-
-  const priceIncl = parsePrice(pick(item, 'price'));
-  const rawExcl = pick(item, 'priceExcl');
-  const priceExcl = rawExcl ? parsePrice(rawExcl) : Math.round(priceIncl / TAX_RATE);
-
-  return {
-    comment: pick(item, 'comment'),
-    maker:   pick(item, 'maker'),
-    name:    pick(item, 'name'),
-    qty1:    pick(item, 'qty1'),
-    qty2:    pick(item, 'qty2'),
-    risk:    pick(item, 'risk'),
-    priceIncl,
-    priceExcl
-  };
 }
 
 function applyThemeColors(cell, theme) {

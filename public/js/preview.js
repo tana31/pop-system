@@ -1,13 +1,6 @@
 /**
- * A4面付けPDFプレビュー画面（エントリポイント）
- *
- * js/preview/
- *   constants.js   … 共有定数・pop-config.js への窓口
- *   data.js        … 印刷キュー・デザイン一覧の読み込み
- *   imposition.js  … 面付け計算（DOM非依存）
- *   pop-cell.js    … POPセル1枚のDOM生成
- *   page-render.js … A4ページのDOM生成
- *   pdf-export.js  … PDF出力
+ * プレビュー画面のエントリポイント
+ * 印刷キュー読込 → テーマ取得 → 面付け計算 → DOM描画。モードかデザインを変えるたびに面付けからやり直す
  */
 import { sizeConfigs, mixedGrid } from './preview/constants.js';
 import { loadQueue, countTotalPops, fetchThemes } from './preview/data.js';
@@ -15,89 +8,89 @@ import { buildSeparatedPages, buildMixedPages } from './preview/imposition.js';
 import { renderPage, renderEmptyState } from './preview/page-render.js';
 import { exportPagesToPdf } from './preview/pdf-export.js';
 
-const DOWNLOAD_LABEL = '<span>⬇️ A4-PDFファイルを直接ダウンロード</span>';
-const DOWNLOAD_BUSY_LABEL = '⏳ PDF生成中...';
+const modeSelect = document.getElementById('modeSelect');
+const themeSelect = document.getElementById('themeSelect');
+const downloadBtn = document.getElementById('downloadPdfBtn');
+const statusInfo = document.getElementById('statusInfo');
+const renderArea = document.getElementById('pdfRenderArea');
 
-const els = {
-  renderArea:  document.getElementById('pdfRenderArea'),
-  themeSelect: document.getElementById('themeSelect'),
-  modeSelect:  document.getElementById('modeSelect'),
-  downloadBtn: document.getElementById('downloadPdfBtn'),
-  statusInfo:  document.getElementById('statusInfo')
-};
-
-const state = {
-  queue: [],
-  themesById: {}
-};
+const queue = loadQueue();
+const totalPops = countTotalPops(queue);
+let themes = [];
 
 init();
 
-function init() {
-  state.queue = loadQueue();
-  renderStatus();
-
-  els.themeSelect.addEventListener('change', rebuildPreview);
-  els.modeSelect.addEventListener('change', rebuildPreview);
-  els.downloadBtn.addEventListener('click', handleDownloadPdf);
-
-  setupThemes(); // 読み込み完了後にプレビューを描画
-}
-
-function renderStatus() {
-  els.statusInfo.innerHTML =
-    `受領データ件数: <strong>${state.queue.length} 件</strong> / ` +
-    `印刷合計枚数: <strong>${countTotalPops(state.queue)} 枚</strong>`;
-}
-
-async function setupThemes() {
-  try {
-    const themes = await fetchThemes();
-    state.themesById = Object.fromEntries(themes.map(t => [t.id, t]));
-    els.themeSelect.replaceChildren(...themes.map(t => new Option(t.name || t.id, t.id)));
-    if (themes.length > 0) els.themeSelect.value = themes[0].id;
-  } catch (err) {
-    console.error(err);
-    els.themeSelect.replaceChildren(new Option('⚠️ デザイン読み込み失敗', ''));
-  } finally {
-    rebuildPreview();
-  }
-}
-
-function rebuildPreview() {
-  const theme = state.themesById[els.themeSelect.value] || {};
-  const pages = els.modeSelect.value === 'separated'
-    ? buildSeparatedPages(state.queue, sizeConfigs)
-    : buildMixedPages(state.queue, sizeConfigs, mixedGrid);
-
-  els.renderArea.replaceChildren(
-    ...(pages.length > 0 ? pages.map(page => renderPage(page, theme)) : [renderEmptyState()])
-  );
-}
-
-async function handleDownloadPdf() {
-  const pageElements = els.renderArea.querySelectorAll('.a4-page');
-  if (pageElements.length === 0) {
-    alert('ダウンロード対象の印刷データがありません。');
+async function init() {
+  if (totalPops === 0) {
+    statusInfo.textContent = '印刷対象のPOPがありません。';
+    renderArea.replaceChildren(renderEmptyState());
+    modeSelect.disabled = themeSelect.disabled = downloadBtn.disabled = true;
     return;
   }
 
-  setDownloadBusy(true);
   try {
-    await exportPagesToPdf(pageElements, `POP_Print_${new Date().toISOString().slice(0, 10)}.pdf`);
+    themes = await fetchThemes();
   } catch (err) {
-    console.error('PDF Export Error:', err);
-    alert(`PDF出力エラー: ${err.message || '生成処理で失敗しました。'}`);
-  } finally {
-    setDownloadBusy(false);
+    console.error(err);
+    statusInfo.textContent = `⚠️ ${err.message}（標準の配色で表示します）`;
+  }
+
+  themeSelect.innerHTML = themes.length
+    ? themes.map(t => `<option value="${escapeAttr(t.id)}">${escapeAttr(t.name || t.id)}</option>`).join('')
+    : '<option value="">標準</option>';
+
+  modeSelect.addEventListener('change', render);
+  themeSelect.addEventListener('change', render);
+  downloadBtn.addEventListener('click', downloadPdf);
+
+  render();
+}
+
+function currentTheme() {
+  return themes.find(t => String(t.id) === themeSelect.value) || themes[0] || {};
+}
+
+function render() {
+  const pages = modeSelect.value === 'mixed'
+    ? buildMixedPages(queue, sizeConfigs, mixedGrid)
+    : buildSeparatedPages(queue, sizeConfigs);
+
+  const theme = currentTheme();
+  renderArea.replaceChildren(...pages.map(p => renderPage(p, theme)));
+
+  // テーマ取得エラーの表示中は上書きしない
+  if (!statusInfo.textContent.startsWith('⚠️')) {
+    statusInfo.textContent = `商品 ${queue.length}件 ／ POP 合計 ${totalPops}枚 ／ A4 ${pages.length}ページ`;
   }
 }
 
-function setDownloadBusy(busy) {
-  els.downloadBtn.disabled = busy;
-  if (busy) {
-    els.downloadBtn.textContent = DOWNLOAD_BUSY_LABEL;
-  } else {
-    els.downloadBtn.innerHTML = DOWNLOAD_LABEL;
+async function downloadPdf() {
+  const pages = [...renderArea.querySelectorAll('.a4-page')];
+  if (pages.length === 0) return;
+
+  const label = downloadBtn.textContent;
+  downloadBtn.disabled = true;
+  downloadBtn.textContent = '⏳ PDFを作成中...';
+  try {
+    await exportPagesToPdf(pages, `POP_Print_${todayLocal()}.pdf`);
+  } catch (err) {
+    console.error(err);
+    alert(`PDFの作成に失敗しました。\n${err.message}`);
+  } finally {
+    downloadBtn.disabled = false;
+    downloadBtn.textContent = label;
   }
+}
+
+/** 端末の現地時刻（日本なら日本時間）で YYYY-MM-DD を返す（toISOString は UTC なので使わない） */
+function todayLocal() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function escapeAttr(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
 }

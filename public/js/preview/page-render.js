@@ -68,16 +68,12 @@ function wrapRotatedCell(cell, pl, pageDesc) {
 /** 印刷対象が無いときの案内 */
 export function renderEmptyState() {
   const box = document.createElement('div');
-  box.className = 'bg-white p-12 rounded-xl text-center space-y-4 shadow max-w-xl mx-auto';
+  box.className = 'empty-state';
   box.innerHTML = `
-    <div class="text-4xl">⚠️</div>
-    <div class="text-lg font-bold text-slate-800">印刷プレビュー対象の枚数が指定されていません</div>
-    <p class="text-sm text-slate-500">スキャン画面で枚数を指定してから進んでください。</p>
-    <div>
-      <a href="index.html" class="inline-block bg-indigo-600 text-white font-bold px-6 py-2 rounded-lg text-sm">
-        スキャン画面に戻る
-      </a>
-    </div>
+    <div class="empty-state__icon">⚠️</div>
+    <div class="empty-state__title">印刷プレビュー対象の枚数が指定されていません</div>
+    <p class="empty-state__text">スキャン画面で枚数を指定してから進んでください。</p>
+    <a href="index.html" class="btn-link">スキャン画面に戻る</a>
   `;
   return box;
 }

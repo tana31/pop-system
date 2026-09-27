@@ -1,18 +1,11 @@
 /**
  * プレビュー画面で共有する定数
  */
+import { SIZE_CONFIGS, MIXED_GRID, QUEUE_STORAGE_KEY } from '../pop-config.js';
 
-// pop-config.js（従来型スクリプト）で定義されたグローバル設定をモジュールから参照する窓口
-// ※ preview.html で pop-config.js を preview.js より先に読み込むこと
 export const sizeConfigs = SIZE_CONFIGS;
 export const mixedGrid = MIXED_GRID;
-
-// master-schema.js（従来型スクリプト）で定義された商品マスタの列定義への窓口
-// ※ preview.html で master-schema.js を preview.js より先に読み込むこと
-if (!self.MasterSchema) {
-  throw new Error('master-schema.js が読み込まれていません。preview.html の script タグを確認してください。');
-}
-export const MasterSchema = self.MasterSchema;
+export { QUEUE_STORAGE_KEY };
 
 // A4用紙の寸法（mm）
 export const PAGE_MM = {
@@ -21,7 +14,6 @@ export const PAGE_MM = {
 };
 
 // データ取得先
-export const QUEUE_STORAGE_KEY = 'pop_print_queue';
 export const THEMES_URL = '/api/themes';
 export const THEME_IMAGE_BASE_URL = '/api/theme-image/';
 

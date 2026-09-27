@@ -137,6 +137,12 @@
   gap: 2px;
 }
 
+.pop-qty {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 6. 税抜き価格コンテナ（●税抜 ＋ ドカンと大文字価格 横並び） */
 .pop-tax-excl-container {
   display: flex;
@@ -307,12 +313,4 @@
   --pop-price-unit-size: 42px;
   --pop-tax-incl-size: 24px;
   --pop-risk-size: 17px;
-}
-
-/* html2canvas の文字位置ずれ対策
-   Tailwind preflight の img{display:block} により、html2canvas が文字のベースラインを
-   誤計測してPDF上の全テキストが下にずれるため、img をインライン要素に戻す。
-   （POP画像はflexアイテムなので表示には影響しません） */
-body img {
-  display: inline-block;
 }

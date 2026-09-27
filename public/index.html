@@ -5,82 +5,67 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>POP作成システム - 高速連続スキャン</title>
 
-  <!-- スタイル定義 -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/app.css">
 
-  <!-- アプリケーションモジュール（master-schema.js は scan-app.js より先に読み込む） -->
-  <script src="js/pop-config.js" defer></script>
-  <script src="js/master-schema.js" defer></script>
-  <script src="js/scan-app.js" defer></script>
+  <!-- pop-config.js 等は scan-app.js から import されるので、ここに書くのはこれだけ -->
+  <script type="module" src="js/scan-app.js"></script>
 </head>
-<body class="bg-slate-100 min-h-screen text-slate-800 pb-20">
+<body class="scan-page">
 
-  <!-- ヘッダー -->
-  <header class="bg-indigo-900 text-white p-4 shadow-md sticky top-0 z-40">
-    <div class="max-w-6xl mx-auto flex justify-between items-center">
-      <h1 class="text-xl font-bold flex items-center gap-2">
-        <span>🏷️</span> POP高速スキャン＆一括印刷システム
-      </h1>
-      <div id="masterStatus" class="text-xs bg-amber-500 text-slate-900 px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5">
-        <span class="animate-spin text-sm">⏳</span> マスタ読み込み中...
+  <header class="app-header">
+    <div class="header-inner">
+      <h1 class="app-title"><span>🏷️</span> POP高速スキャン＆一括印刷システム</h1>
+      <div id="masterStatus" class="status-badge status-badge--loading">
+        <span class="spin">⏳</span> マスタ読み込み中...
       </div>
     </div>
   </header>
 
-  <main class="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+  <main class="container">
 
     <!-- STEP 1: JANスキャン / あいまい検索 -->
-    <section class="bg-white p-5 rounded-xl shadow-md border-2 border-indigo-500 space-y-4">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- バーコードスキャン -->
+    <section class="panel panel--primary">
+      <div class="input-grid">
         <div>
-          <label class="block text-xs font-bold text-indigo-900 mb-1">⚡ JANコード連続スキャン（Enterで即時追加）</label>
-          <input type="text" id="janInput" placeholder="バーコードをスキャン..." class="w-full text-xl p-3 border-2 border-indigo-600 rounded-lg focus:outline-none focus:ring-4 focus:ring-indigo-200 font-mono font-bold bg-indigo-50" disabled>
+          <label class="field-label field-label--primary" for="janInput">⚡ JANコード連続スキャン（Enterで即時追加）</label>
+          <input type="text" id="janInput" class="jan-input" placeholder="バーコードをスキャン..." autocomplete="off" disabled>
         </div>
 
-        <!-- 商品名検索 -->
-        <div class="relative">
-          <label class="block text-xs font-bold text-slate-500 mb-1">🔍 商品名あいまい検索</label>
-          <input type="text" id="searchNameInput" placeholder="商品名の一部を入力..." class="w-full text-lg p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" disabled>
-          <div id="searchSuggestions" class="hidden absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-b-lg shadow-xl max-h-60 overflow-y-auto z-50"></div>
+        <div class="search-box">
+          <label class="field-label" for="searchNameInput">🔍 商品名あいまい検索</label>
+          <input type="text" id="searchNameInput" class="search-input" placeholder="商品名の一部を入力..." autocomplete="off" disabled>
+          <div id="searchSuggestions" class="suggestions hidden"></div>
         </div>
       </div>
     </section>
 
     <!-- STEP 2: 印刷待機リスト -->
-    <section class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
-      <div class="flex flex-wrap justify-between items-center gap-2">
-        <h2 class="font-bold text-lg text-slate-800 flex items-center gap-2">
+    <section class="panel">
+      <div class="list-header">
+        <h2 class="list-title">
           <span>📋 印刷待機リスト</span>
-          <span id="queueCount" class="bg-indigo-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">0件</span>
+          <span id="queueCount" class="count-badge">0件</span>
         </h2>
-        
-        <div class="flex items-center gap-3">
-          <button id="toggleAllOptionsBtn" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded font-bold border border-slate-300">
-            ⚙️ 全行のオプションサイズ表示切替
-          </button>
-          <button id="clearQueueBtn" class="text-xs text-red-600 hover:underline">リストを全クリア</button>
+        <div class="toolbar">
+          <button type="button" id="toggleAllOptionsBtn" class="btn-secondary">⚙️ 全行のオプションサイズ表示切替</button>
+          <button type="button" id="clearQueueBtn" class="link-danger">リストを全クリア</button>
         </div>
       </div>
 
       <!-- スキャン通知バナー -->
-      <div id="scanNotice" class="hidden bg-emerald-100 border border-emerald-400 text-emerald-800 px-4 py-2 rounded-lg text-sm font-bold flex justify-between items-center">
+      <div id="scanNotice" class="notice notice--success hidden">
         <span id="scanNoticeText"></span>
-        <span class="text-xs text-emerald-600">リスト先頭に追加しました</span>
+        <span id="scanNoticeSub" class="notice__sub">リスト先頭に追加しました</span>
       </div>
 
-      <!-- 印刷リスト一覧コンテナ -->
-      <div id="queueListContainer" class="space-y-3">
-        <div id="emptyQueueMessage" class="text-center py-12 text-slate-400 font-bold border-2 border-dashed border-slate-200 rounded-xl">
+      <div id="queueListContainer" class="queue-list">
+        <div id="emptyQueueMessage" class="empty-message">
           JANコードをスキャンすると、ここに商品が追加されます。
         </div>
       </div>
 
-      <!-- アクションボタン -->
-      <div class="pt-4 flex justify-end">
-        <button id="generatePopBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-lg px-8 py-3 rounded-lg shadow-lg flex items-center gap-2">
-          <span>🖨️ 印刷プレビュー・PDF出力画面へ進む</span>
-        </button>
+      <div class="actions">
+        <button type="button" id="generatePopBtn" class="btn-primary">🖨️ 印刷プレビュー・PDF出力画面へ進む</button>
       </div>
     </section>
 
