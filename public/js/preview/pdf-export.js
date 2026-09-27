@@ -1,90 +1,108 @@
 /**
- * A4ページ要素をPDFに変換してダウンロード（html2canvas + jsPDF）
+ * A4ページ要素をPDFに変換してダウンロード（html-to-image + jsPDF）
+ *
+ * 以前は html2canvas を使っていたが、html2canvas は CSS を自前で解釈して描き直すため、
+ * 文字の位置・サイズが画面（プレビュー）とずれる。html-to-image はブラウザ自身の描画
+ * （SVG foreignObject）で画像化するので、プレビューと同じ見た目になる。
+ * 回転配置（A5ヨコの混載）もブラウザがそのまま描くので、別撮影・回転処理は不要。
  */
 import { PAGE_MM } from './imposition.js';
-import { ROTATE_SLOT_CLASS, ROTATE_INNER_CLASS } from './page-render.js';
+import { ROTATE_INNER_CLASS } from './page-render.js';
 import { BARCODE_BARS_CLASS, toBars } from './barcode.js';
 
-const CAPTURE_OPTIONS = { scale: 2, useCORS: true, logging: false };
-const JPEG_QUALITY = 0.98;
+const PIXEL_RATIO = 2;      // 画像の解像度（2 で約190dpi。文字をより鮮明にしたい場合は 3）
+const JPEG_QUALITY = 0.95;
 
-// バーコードの線は画像にせず、あとからベクターで描く（JPEG化によるにじみで読めなくなるのを防ぐ）
-const isBarcodeBars = el => el.classList?.contains(BARCODE_BARS_CLASS);
+// Safari は1回目の描画で画像やフォントが欠けることがあるため、2回描画して2回目を使う
+const IS_SAFARI = /^((?!chrome|chromium|crios|android).)*safari/i.test(navigator.userAgent);
 
 export async function exportPagesToPdf(pageElements, fileName) {
   const jsPDF = window.jspdf?.jsPDF || window.jsPDF;
-  if (!jsPDF || typeof window.html2canvas !== 'function') {
+  const htmlToImage = window.htmlToImage;
+  if (!jsPDF || !htmlToImage) {
     throw new Error('PDF生成ライブラリの読み込みに失敗しました。');
   }
 
-  // Webフォントの読み込み完了を待ってから描画（文字幅ずれ防止）
+  // Webフォント・画像の読み込み完了を待ってから描画
   if (document.fonts?.ready) await document.fonts.ready;
+  await waitForImages(pageElements);
+
+  // Webフォントの埋め込み用CSSは全ページ共通なので、最初に1回だけ作る
+  let fontEmbedCSS;
+  try {
+    fontEmbedCSS = await htmlToImage.getFontEmbedCSS(pageElements[0]);
+  } catch (err) {
+    console.warn('フォント埋め込みCSSの事前作成に失敗しました（ページごとに作成します）', err);
+  }
+
+  // バーコードの線は画像にせず、あとからベクターで描く（JPEG化によるにじみで読めなくなるのを防ぐ）。
+  // 要素を取り除くと下の数字が上に詰まってずれるため、場所は残したまま見えなくする
+  const restoreBars = hideBarcodeBars(pageElements);
 
   let pdf = null;
+  try {
+    for (const pageEl of pageElements) {
+      const orientation = pageEl.classList.contains('landscape') ? 'landscape' : 'portrait';
+      const { w, h } = PAGE_MM[orientation];
+      const pdfOrientation = orientation === 'landscape' ? 'l' : 'p';
 
-  for (const pageEl of pageElements) {
-    const orientation = pageEl.classList.contains('landscape') ? 'landscape' : 'portrait';
-    const { w, h } = PAGE_MM[orientation];
-    const pdfOrientation = orientation === 'landscape' ? 'l' : 'p';
+      if (!pdf) {
+        pdf = new jsPDF(pdfOrientation, 'mm', 'a4');
+      } else {
+        pdf.addPage('a4', pdfOrientation);
+      }
 
-    if (!pdf) {
-      pdf = new jsPDF(pdfOrientation, 'mm', 'a4');
-    } else {
-      pdf.addPage('a4', pdfOrientation);
+      const canvas = await capturePage(htmlToImage, pageEl, fontEmbedCSS);
+      pdf.addImage(canvas.toDataURL('image/jpeg', JPEG_QUALITY), 'JPEG', 0, 0, w, h);
+
+      // 最後にバーコードの線をベクターで重ねる
+      drawBarcodes(pdf, pageEl, w);
     }
-
-    // ページ全体を撮影（回転POPの中身はここでは描かず、後から画像で貼る）
-    const canvas = await window.html2canvas(pageEl, {
-      ...CAPTURE_OPTIONS,
-      ignoreElements: el => el.classList?.contains(ROTATE_INNER_CLASS) || isBarcodeBars(el)
-    });
-    pdf.addImage(toJpeg(canvas), 'JPEG', 0, 0, w, h);
-
-    // 回転配置のPOP（A5ヨコ）を回転済み画像として所定位置に貼り付け
-    for (const slot of pageEl.querySelectorAll(`.${ROTATE_SLOT_CLASS}`)) {
-      const inner = slot.querySelector(`.${ROTATE_INNER_CLASS}`);
-      if (!inner) continue;
-      const rotated = await captureRotatedCell(inner);
-      const { x, y, w: slotW, h: slotH } = slot.dataset;
-      pdf.addImage(toJpeg(rotated), 'JPEG', Number(x), Number(y), Number(slotW), Number(slotH));
-    }
-
-    // 最後にバーコードの線をベクターで重ねる
-    drawBarcodes(pdf, pageEl, w);
+  } finally {
+    restoreBars();
   }
 
   pdf.save(fileName);
 }
 
-/**
- * 回転配置のPOPを「回転前の状態」で撮影し、-90°回転したcanvasを返す
- * （html2canvas は transform + overflow:hidden の組み合わせで描画が崩れるため）
- */
-async function captureRotatedCell(innerEl) {
-  const src = await window.html2canvas(innerEl, {
-    ...CAPTURE_OPTIONS,
+/** 1ページをブラウザの描画のまま canvas にする */
+async function capturePage(htmlToImage, pageEl, fontEmbedCSS) {
+  const options = {
+    pixelRatio: PIXEL_RATIO,
     backgroundColor: '#ffffff',
-    ignoreElements: isBarcodeBars,
-    onclone: (doc, clonedEl) => {
-      clonedEl.style.transform = 'none';
-      clonedEl.style.left = '0';
-      clonedEl.style.top = '0';
-    }
-  });
+    // 画面表示用に縮小（transform）していても、本来のA4寸法で撮影する
+    width: pageEl.offsetWidth,
+    height: pageEl.offsetHeight,
+    style: { transform: 'none', margin: '0', boxShadow: 'none' },
+    ...(fontEmbedCSS ? { fontEmbedCSS } : {})
+  };
 
-  const dst = document.createElement('canvas');
-  dst.width = src.height;
-  dst.height = src.width;
-  const ctx = dst.getContext('2d');
-  ctx.translate(0, dst.height);
-  ctx.rotate(-Math.PI / 2); // CSSの rotate(-90deg) と同じ向き
-  ctx.drawImage(src, 0, 0);
-  return dst;
+  if (IS_SAFARI) await htmlToImage.toCanvas(pageEl, options);
+  return htmlToImage.toCanvas(pageEl, options);
+}
+
+/** ページ内の画像（テーマ画像）の読み込みを待つ。失敗した画像は待たない */
+function waitForImages(pageElements) {
+  const images = pageElements.flatMap(p => [...p.querySelectorAll('img')]);
+  return Promise.all(images.map(img => (img.complete
+    ? null
+    : new Promise(resolve => {
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', resolve, { once: true });
+      }))));
+}
+
+/** バーコードの線を一時的に非表示にし、元に戻す関数を返す（レイアウトは変わらない） */
+function hideBarcodeBars(pageElements) {
+  const svgs = pageElements.flatMap(p => [...p.querySelectorAll(`.${BARCODE_BARS_CLASS}`)]);
+  const previous = svgs.map(svg => svg.style.visibility);
+  svgs.forEach(svg => { svg.style.visibility = 'hidden'; });
+  return () => svgs.forEach((svg, i) => { svg.style.visibility = previous[i]; });
 }
 
 /**
  * ページ内のバーコードを PDF にベクターの黒い長方形として描く。
- * 位置は画面上の配置（mm単位のCSS）から求める。回転配置（A5ヨコの混載）の中にあるものは
+ * 位置は画面上の配置から求める。回転配置（A5ヨコの混載）の中にあるものは
  * -90°回転しているので、元の「左→右」が「下→上」になる
  */
 function drawBarcodes(pdf, pageEl, pageWidthMm) {
@@ -113,8 +131,4 @@ function drawBarcodes(pdf, pageEl, pageWidthMm) {
       }
     }
   }
-}
-
-function toJpeg(canvas) {
-  return canvas.toDataURL('image/jpeg', JPEG_QUALITY);
 }

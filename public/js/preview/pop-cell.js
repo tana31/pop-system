@@ -29,13 +29,18 @@ export function createPopCell(conf, item, theme) {
         </div>
       </div>
       <div class="pop-divider"></div>
-      <div class="pop-tax-incl">(税込) ${item.price.toLocaleString()}円</div>
-      <div class="pop-risk-tag">${escapeHtml(item.risk)}</div>
+      <div class="pop-tax-incl">(税込) ${item.price.toLocaleString()}<span class="unit">円</span></div>
     </div>
   `;
 
-  // POP下部に JAN バーコードと数字を配置
-  cell.querySelector('.pop-content').appendChild(createBarcodeElement(item.jan));
+  // POP下部に JAN バーコードと数字、その下に医薬品リスク区分（左寄せ）を配置。
+  // リスク区分が未記入でも要素は作る（CSSで1行分の高さを確保し、POPごとに位置がずれないようにしている）
+  const content = cell.querySelector('.pop-content');
+  content.appendChild(createBarcodeElement(item.jan));
+  const risk = document.createElement('div');
+  risk.className = 'pop-risk-tag';
+  risk.textContent = item.risk ?? '';
+  content.appendChild(risk);
 
   const image = themeImageUrls(theme, conf.key);
   if (image) cell.prepend(createImageContainer(image.src, image.fallback));

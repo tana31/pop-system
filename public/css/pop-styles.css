@@ -104,6 +104,8 @@
   font-weight: 800;
   color: var(--pop-color-comment);
   line-height: 1.05;
+  /* 未記入でも1行分の高さを確保（無いと下の要素が上にずれる） */
+  min-height: calc(var(--pop-comment-size) * 1.05);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -181,17 +183,22 @@
   color: var(--pop-color-price-red);
 }
 
+/* 「円」の文字サイズは税抜・税込で共通（未指定なら税込価格と同じ大きさ） */
 .pop-price-excl .unit {
-  font-size: var(--pop-price-unit-size);
+  font-size: var(--pop-yen-size, var(--pop-tax-incl-size));
   font-weight: 800;
   margin-left: 1px;
   letter-spacing: normal;
 }
 
+.pop-tax-incl .unit {
+  font-size: var(--pop-yen-size, var(--pop-tax-incl-size));
+}
+
 /* 7. 区切り線 */
 .pop-divider {
   border-bottom: 0.8pt solid var(--pop-text-main);
-  margin: 0.5mm 0 0.3mm 0;
+  margin: var(--pop-divider-mt, 0.5mm) 0 var(--pop-divider-mb, 0.3mm) 0;
   width: 100%;
 }
 
@@ -200,7 +207,7 @@
   font-size: var(--pop-tax-incl-size);
   font-weight: 800;
   color: #1e293b;
-  line-height: 1.05;
+  line-height: var(--pop-tax-incl-lh, 1.05);
   text-align: right;
   white-space: nowrap;
   width: 100%;
@@ -212,15 +219,14 @@
   font-weight: 800;
   color: var(--pop-color-risk-text);
   text-align: left;
-  padding: 0.3mm 0;
   line-height: 1.0;
-  /* 未記入でも1行分の高さを確保（無いと税抜価格などが下にずれる） */
-  min-height: calc(var(--pop-risk-size) + 0.6mm);
   margin-top: 0.3mm;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   width: 100%;
+  padding: var(--pop-risk-pad, 0.3mm) 0;
+  min-height: calc(var(--pop-risk-size) + var(--pop-risk-pad, 0.3mm) * 2);
 }
 
 /* 10. JANバーコード
@@ -263,7 +269,10 @@
 .pop-barcode.is-text-only { padding: var(--pop-barcode-h, 6mm) 0.5mm 0; }
 
 /* ==========================================================================
-   サイズ別 CSS変数スケール調整 (1カラム・タイトな行間調整版)
+   サイズ別 CSS変数スケール調整
+   A8ヨコを基準に、用紙の相似比で拡大（A6ヨコ=2倍、A5ヨコ=約2.83倍、A4ヨコ=4倍）。
+   A9タテ（縦長・画像が上）と A6ハーフ（高さはA8と同じ）は個別に調整。
+   バーコード寸法は読み取りやすさで決めているため、文字と一緒には拡大しない
    ========================================================================== */
 
 /* A9タテ (37.125mm × 52.5mm: 1/32面) */
@@ -272,116 +281,134 @@
   --pop-barcode-bleed: 1.5mm;
   --pop-barcode-h: 5mm;
   --pop-barcode-text-size: 6px;
-  --pop-barcode-gap: 0.6mm;
-  --pop-img-max-h: 9mm;
-  --pop-comment-size: 8.5px;
-  --pop-maker-size: 8.5px;
-  --pop-name-size: 13.5px;
-  --pop-qty-size: 8.5px;
+  --pop-barcode-gap: 1mm;
+  --pop-img-max-h: 7mm;
+  --pop-comment-size: 8px;
+  --pop-maker-size: 8px;
+  --pop-name-size: 12.5px;
+  --pop-qty-size: 8px;
   --pop-badge-size: 8.5px;
   --pop-price-size: 26px;
-  --pop-price-unit-size: 8.5px;
-  --pop-tax-incl-size: 10px;
+  --pop-tax-incl-size: 12px;
+  --pop-tax-incl-lh: 1.1;
+  --pop-divider-mt: 1mm;
+  --pop-divider-mb: 0.8mm;
   --pop-risk-size: 6px;
+  --pop-risk-pad: 0mm;
 }
 
-/* A8ヨコ (74.25mm × 52.5mm: 1/16面) */
+/* A8ヨコ (74.25mm × 52.5mm: 1/16面) … 基準 */
 .pop-size-a8 {
   --pop-barcode-w: 28mm;
   --pop-barcode-h: 5.5mm;
   --pop-barcode-text-size: 6.5px;
-  --pop-barcode-gap: 0.6mm;
+  --pop-barcode-gap: 1.2mm;
   --pop-img-w: 34%;
   --pop-gap: 2mm;
   --pop-comment-size: 9px;
   --pop-maker-size: 8px;
-  --pop-name-size: 12px;
+  --pop-name-size: 13px;
   --pop-qty-size: 8px;
-  --pop-badge-size: 8px;
-  --pop-price-size: 34px;
-  --pop-price-unit-size: 13px;
-  --pop-tax-incl-size: 9.5px;
+  --pop-badge-size: 9px;
+  --pop-price-size: 36px;
+  --pop-tax-incl-size: 15px;
+  --pop-tax-incl-lh: 1.1;
+  --pop-divider-mt: 1.2mm;
+  --pop-divider-mb: 1mm;
   --pop-risk-size: 7.5px;
+  --pop-risk-pad: 0mm;
 }
 
-/* A6ハーフ (148.5mm × 52.5mm: 1/8面) */
+/* A6ハーフ (148.5mm × 52.5mm: 1/8面) … 高さはA8と同じなので文字はA8並み、横幅の余裕で価格を大きく */
 .pop-size-a6half {
   --pop-barcode-w: 30mm;
   --pop-barcode-h: 6mm;
   --pop-barcode-text-size: 7px;
-  --pop-barcode-gap: 0.8mm;
+  --pop-barcode-gap: 1mm;
   --pop-img-w: 30%;
   --pop-gap: 3mm;
-  --pop-comment-size: 10.5px;
-  --pop-maker-size: 9.5px;
-  --pop-name-size: 14px;
-  --pop-qty-size: 9.5px;
-  --pop-badge-size: 9.5px;
-  --pop-price-size: 38px;
-  --pop-price-unit-size: 15px;
-  --pop-tax-incl-size: 10.5px;
-  --pop-risk-size: 8.5px;
+  --pop-comment-size: 9px;
+  --pop-maker-size: 8px;
+  --pop-name-size: 13px;
+  --pop-qty-size: 8px;
+  --pop-badge-size: 9px;
+  --pop-price-size: 40px;
+  --pop-tax-incl-size: 16px;
+  --pop-tax-incl-lh: 1.1;
+  --pop-divider-mt: 1mm;
+  --pop-divider-mb: 0.8mm;
+  --pop-risk-size: 7.5px;
+  --pop-risk-pad: 0mm;
 }
 
-/* A6ヨコ (148.5mm × 105mm: 1/4面) */
+/* A6ヨコ (148.5mm × 105mm: 1/4面) … A8の2倍 */
 .pop-size-a6 {
   --pop-barcode-w: 36mm;
   --pop-barcode-h: 9mm;
   --pop-barcode-text-size: 9px;
-  --pop-barcode-gap: 1.2mm;
+  --pop-barcode-gap: 2mm;
   --pop-pad-y: 4mm;
   --pop-pad-x: 5mm;
   --pop-img-w: 32%;
   --pop-gap: 3.5mm;
-  --pop-comment-size: 13px;
-  --pop-maker-size: 11.5px;
-  --pop-name-size: 18px;
-  --pop-qty-size: 11.5px;
-  --pop-badge-size: 12px;
-  --pop-price-size: 58px;
-  --pop-price-unit-size: 22px;
-  --pop-tax-incl-size: 14px;
-  --pop-risk-size: 11px;
+  --pop-comment-size: 18px;
+  --pop-maker-size: 16px;
+  --pop-name-size: 26px;
+  --pop-qty-size: 16px;
+  --pop-badge-size: 18px;
+  --pop-price-size: 72px;
+  --pop-tax-incl-size: 30px;
+  --pop-tax-incl-lh: 1.1;
+  --pop-divider-mt: 2.4mm;
+  --pop-divider-mb: 2mm;
+  --pop-risk-size: 15px;
+  --pop-risk-pad: 0mm;
 }
 
-/* A5ヨコ (210mm × 148.5mm: 1/2面) */
+/* A5ヨコ (210mm × 148.5mm: 1/2面) … A8の約2.83倍 */
 .pop-size-a5 {
   --pop-barcode-w: 40mm;
   --pop-barcode-h: 11mm;
   --pop-barcode-text-size: 10px;
-  --pop-barcode-gap: 1.5mm;
+  --pop-barcode-gap: 2.5mm;
   --pop-pad-y: 5mm;
   --pop-pad-x: 7mm;
   --pop-img-w: 30%;
   --pop-gap: 4mm;
-  --pop-comment-size: 16px;
-  --pop-maker-size: 14px;
-  --pop-name-size: 24px;
-  --pop-qty-size: 14px;
-  --pop-badge-size: 15px;
-  --pop-price-size: 80px;
-  --pop-price-unit-size: 30px;
-  --pop-tax-incl-size: 18px;
-  --pop-risk-size: 13px;
+  --pop-comment-size: 25px;
+  --pop-maker-size: 23px;
+  --pop-name-size: 37px;
+  --pop-qty-size: 23px;
+  --pop-badge-size: 25px;
+  --pop-price-size: 100px;
+  --pop-tax-incl-size: 42px;
+  --pop-tax-incl-lh: 1.1;
+  --pop-divider-mt: 3.4mm;
+  --pop-divider-mb: 2.8mm;
+  --pop-risk-size: 21px;
+  --pop-risk-pad: 0mm;
 }
 
-/* A4ヨコ (297mm × 210mm: 1/1面) */
+/* A4ヨコ (297mm × 210mm: 1/1面) … A8の4倍 */
 .pop-size-a4 {
   --pop-barcode-w: 50mm;
   --pop-barcode-h: 15mm;
   --pop-barcode-text-size: 12px;
-  --pop-barcode-gap: 2mm;
+  --pop-barcode-gap: 3mm;
   --pop-pad-y: 8mm;
   --pop-pad-x: 10mm;
   --pop-img-w: 28%;
   --pop-gap: 5mm;
-  --pop-comment-size: 22px;
-  --pop-maker-size: 18px;
-  --pop-name-size: 34px;
-  --pop-qty-size: 18px;
-  --pop-badge-size: 20px;
-  --pop-price-size: 110px;
-  --pop-price-unit-size: 42px;
-  --pop-tax-incl-size: 24px;
-  --pop-risk-size: 17px;
+  --pop-comment-size: 36px;
+  --pop-maker-size: 32px;
+  --pop-name-size: 52px;
+  --pop-qty-size: 32px;
+  --pop-badge-size: 36px;
+  --pop-price-size: 144px;
+  --pop-tax-incl-size: 60px;
+  --pop-tax-incl-lh: 1.1;
+  --pop-divider-mt: 4.8mm;
+  --pop-divider-mb: 4mm;
+  --pop-risk-size: 30px;
+  --pop-risk-pad: 0mm;
 }
