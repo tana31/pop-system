@@ -8,14 +8,15 @@
  *   受信: {type:'init'} / {type:'lookup', id, jan} / {type:'search', id, keyword, limit}
  *   送信: {type:'status', state, ...} / {type:'result', id, data}
  */
+// 列名の定義・値の正規化は画面側と共通のファイルを使う
+importScripts('/js/master-schema.js');
+const { COLUMNS, normalizeJan } = self.MasterSchema;
+
 const API_URL = '/api/master';
 const DB_NAME = 'pop-master-cache';
 const DB_VERSION = 1;
 const STORE = 'master';
 const RECORD_KEY = 'current';
-
-const JAN_COLUMNS = ['JAN', 'JANコード', 'jan'];
-const NAME_COLUMNS = ['品名', '商品名'];
 
 let headers = [];
 let rows = [];
@@ -91,6 +92,7 @@ async function init() {
     if (!Array.isArray(data.headers) || !Array.isArray(data.rows)) {
       throw new Error('マスタの形式が不正です');
     }
+    warnMissingColumns(data.headers);
 
     buildIndex(data);
     resolveReady();
@@ -131,21 +133,30 @@ function firstValue(row, cols) {
 function buildIndex(data) {
   headers = data.headers;
   rows = data.rows;
-  janCols = findCols(JAN_COLUMNS);
-  nameCols = findCols(NAME_COLUMNS);
+  janCols = findCols(COLUMNS.jan);
+  nameCols = findCols(COLUMNS.name);
 
   const newJanIndex = new Map();
   const newNameIndex = new Array(rows.length);
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const jan = firstValue(row, janCols);
+    const jan = normalizeJan(firstValue(row, janCols));
     if (jan) newJanIndex.set(jan, i);
     newNameIndex[i] = normalize(firstValue(row, nameCols));
   }
 
   janIndex = newJanIndex;
   nameIndex = newNameIndex;
+}
+
+// 必須列が見つからない場合はコンソールに警告（列名変更に気づくため）
+function warnMissingColumns(hdrs) {
+  ['jan', 'name', 'price'].forEach(key => {
+    if (!COLUMNS[key].some(col => hdrs.includes(col))) {
+      console.warn(`[master-worker] 「${key}」の列が見つかりません。master-schema.js の COLUMNS.${key} を確認してください。候補: ${COLUMNS[key].join(', ')}`);
+    }
+  });
 }
 
 function toObject(i) {
@@ -159,7 +170,7 @@ function toObject(i) {
 // 検索
 // ------------------------------------------------------------
 function lookup(jan) {
-  const key = String(jan ?? '').trim();
+  const key = normalizeJan(jan);
   if (!key) return null;
   const idx = janIndex.get(key);
   return idx === undefined ? null : toObject(idx);

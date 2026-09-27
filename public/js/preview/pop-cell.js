@@ -1,19 +1,9 @@
 /**
  * POPセル（1枚分）のDOM生成
  */
-import { THEME_IMAGE_BASE_URL, SIZES_WITH_DEDICATED_IMAGE } from './constants.js';
+import { THEME_IMAGE_BASE_URL, SIZES_WITH_DEDICATED_IMAGE, MasterSchema } from './constants.js';
 
-// 商品データの項目名の揺れ（先に見つかったものを採用）
-const FIELD_ALIASES = {
-  comment:   ['コメント', 'アピール文'],
-  maker:     ['製造メーカー', 'メーカー'],
-  name:      ['品名', '商品名'],
-  qty1:      ['数量1', '内容量'],
-  qty2:      ['数量2', '規格'],
-  risk:      ['リスク分類', '医薬品区分'],
-  priceIncl: ['販売価格(税込)', '税込価格'],
-  priceExcl: ['販売価格(税抜)', '税抜価格']
-};
+// 商品データの列名は js/master-schema.js（COLUMNS）で一元管理している
 
 // テーマの設定項目 → CSS変数
 const THEME_CSS_VARS = {
@@ -60,26 +50,21 @@ export function createPopCell(conf, rawItem, theme) {
   return cell;
 }
 
-/** 項目名の揺れを吸収し、価格を数値化 */
+/** 列名の揺れを吸収し、価格を数値化（¥・カンマ・全角数字なども正しく読む） */
 function normalizeItem(item = {}) {
-  const pick = key => {
-    for (const field of FIELD_ALIASES[key]) {
-      if (item[field]) return item[field];
-    }
-    return '';
-  };
+  const { pick, parsePrice } = MasterSchema;
 
-  const priceIncl = Number(pick('priceIncl') || 0);
-  const rawExcl = pick('priceExcl');
-  const priceExcl = rawExcl ? Number(rawExcl) : Math.round(priceIncl / TAX_RATE);
+  const priceIncl = parsePrice(pick(item, 'price'));
+  const rawExcl = pick(item, 'priceExcl');
+  const priceExcl = rawExcl ? parsePrice(rawExcl) : Math.round(priceIncl / TAX_RATE);
 
   return {
-    comment: pick('comment'),
-    maker:   pick('maker'),
-    name:    pick('name'),
-    qty1:    pick('qty1'),
-    qty2:    pick('qty2'),
-    risk:    pick('risk'),
+    comment: pick(item, 'comment'),
+    maker:   pick(item, 'maker'),
+    name:    pick(item, 'name'),
+    qty1:    pick(item, 'qty1'),
+    qty2:    pick(item, 'qty2'),
+    risk:    pick(item, 'risk'),
     priceIncl,
     priceExcl
   };

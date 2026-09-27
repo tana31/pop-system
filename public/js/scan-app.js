@@ -2,6 +2,7 @@
  * スキャン・印刷キュー管理アプリケーション
  * マスタの取得・解析・検索は Web Worker (master-worker.js) が担当し、
  * このファイル（メインスレッド）は画面操作だけを行う。
+ * 商品マスタの列名は master-schema.js で管理する（先に読み込むこと）。
  */
 const MASTER_WORKER_URL = '/js/master-worker.js';
 const QUEUE_STORAGE_KEY = 'pop_print_queue';
@@ -15,9 +16,8 @@ function escapeHtml(v) {
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
 }
-const getName = item => item['品名'] || item['商品名'] || '';
-const getJan = item => item['JANコード'] || item['JAN'] || item['jan'] || '';
-const getPrice = item => Number(item['販売価格(税込)'] || item['税込価格'] || 0);
+// 列名の扱いは master-schema.js に集約（ここでは列名を直接書かない）
+const { getJan, getName, getMaker, getPrice } = self.MasterSchema;
 
 document.addEventListener('DOMContentLoaded', () => {
   // DOM要素取得
@@ -256,7 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div data-idx="${idx}" class="suggestion-item p-3 hover:bg-indigo-50 cursor-pointer border-b text-sm flex justify-between items-center">
         <div>
           <div class="font-bold text-slate-800">${escapeHtml(getName(item))}</div>
-          <div class="text-xs text-slate-500">${escapeHtml(item['製造メーカー'] || '')} / JAN: ${escapeHtml(getJan(item))}</div>
+          <div class="text-xs text-slate-500">${escapeHtml(getMaker(item))} / JAN: ${escapeHtml(getJan(item))}</div>
         </div>
         <div class="font-bold text-red-600">¥${getPrice(item).toLocaleString()}</div>
       </div>
@@ -311,7 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const item = q.item;
       const jan = escapeHtml(getJan(item));
       const name = escapeHtml(getName(item));
-      const maker = escapeHtml(item['製造メーカー'] || item['メーカー'] || '');
+      const maker = escapeHtml(getMaker(item));
       const price = getPrice(item).toLocaleString();
 
       const card = document.createElement('div');

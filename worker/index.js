@@ -1,6 +1,22 @@
-const MASTER_KEY = 'masters/item_master.csv';
-// レスポンス形式を変えたらここを上げる（クライアントのキャッシュが自動で無効化される）
+/**
+ * ============================================================
+ * /api/master の約束事（★画面側はこれだけを前提にしている★）
+ * ============================================================
+ *  - 返す形: { version: string, headers: string[], rows: string[][] }
+ *  - ETag ヘッダーにバージョンを入れる
+ *  - If-None-Match がバージョンと一致したら 304（本文なし）を返す
+ *
+ * 取得元を R2 から社内サーバー等に切り替えても、この約束を守れば
+ * scan-app.js / master-worker.js は変更不要。
+ * 列名の扱いはフロント側の js/master-schema.js で管理している。
+ */
+
+// レスポンス形式や文字コード設定を変えたらここを上げる（各端末のキャッシュが自動で無効化される）
 const MASTER_FORMAT = 'v2';
+
+// CSVの文字コード（wrangler の vars で MASTER_ENCODING を指定すれば上書き可能）
+// ※ ファイル先頭に UTF-8 の BOM がある場合は自動で UTF-8 として読む
+const DEFAULT_MASTER_ENCODING = 'shift-jis';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
@@ -42,20 +58,51 @@ function normalizeEtag(value) {
 }
 
 // ============================================================
-// /api/master
-//   - R2オブジェクトのETagをバージョンとして使用
+// 商品マスタの取得元（データソース）
+//
+// 取得元は次の2つの関数を持つ部品として作る:
+//   getVersion() … 本文を読まずにバージョン（変更検知用の文字列）を返す。無ければ null
+//   getCsv()     … { version, bytes(ArrayBuffer) } を返す。無ければ null
+//
+// 将来、社内サーバー（Cloudflare Tunnel 経由）に切り替える場合は
+// 同じ形の部品（例: createHttpMasterSource）を作り、createMasterSource で差し替える。
+// ============================================================
+function createMasterSource(env) {
+  return createR2MasterSource(env);
+}
+
+function createR2MasterSource(env) {
+  const key = env.MASTER_R2_KEY || 'masters/item_master.csv';
+  return {
+    async getVersion() {
+      const head = await env.MY_R2_BUCKET.head(key);
+      return head ? head.etag : null;
+    },
+    async getCsv() {
+      const object = await env.MY_R2_BUCKET.get(key);
+      if (!object) return null;
+      return { version: object.etag, bytes: await object.arrayBuffer() };
+    }
+  };
+}
+
+// ============================================================
+// /api/master（取得元に依存しない共通処理）
 //   - If-None-Match が一致すれば 304（本文なし）を返す
 //   - 変換結果はエッジキャッシュに保存し、CSV更新時のみ再変換
 // ============================================================
 async function handleMaster(request, env, ctx) {
+  const source = createMasterSource(env);
+  const toEtag = v => `"${MASTER_FORMAT}-${v}"`;
+
   try {
-    // 1. まずメタデータだけ取得（本文は読まないので軽い）
-    const head = await env.MY_R2_BUCKET.head(MASTER_KEY);
-    if (!head) {
+    // 1. バージョンだけ確認（本文は読まないので軽い）
+    const sourceVersion = await source.getVersion();
+    if (!sourceVersion) {
       return jsonResponse({ error: '商品マスタCSVが見つかりません。' }, 404);
     }
 
-    const version = `"${MASTER_FORMAT}-${head.etag}"`;
+    const version = toEtag(sourceVersion);
     const versionHeaders = { 'ETag': version, 'Cache-Control': 'no-cache' };
 
     // 2. クライアントが最新版を持っていれば 304
@@ -78,18 +125,17 @@ async function handleMaster(request, env, ctx) {
       });
     }
 
-    // 4. キャッシュがなければ R2 から取得して変換
-    const object = await env.MY_R2_BUCKET.get(MASTER_KEY);
-    if (!object) {
+    // 4. キャッシュがなければ取得元から読んで変換
+    const csv = await source.getCsv();
+    if (!csv) {
       return jsonResponse({ error: '商品マスタCSVが見つかりません。' }, 404);
     }
 
-    const arrayBuffer = await object.arrayBuffer();
-    const csvText = new TextDecoder('shift-jis').decode(arrayBuffer);
+    const csvText = decodeCsvBytes(csv.bytes, env.MASTER_ENCODING || DEFAULT_MASTER_ENCODING);
     const { headers, rows } = parseCsv(csvText);
 
-    // head と get の間にファイルが更新された場合に備え、実際に読んだオブジェクトのETagを使う
-    const actualVersion = `"${MASTER_FORMAT}-${object.etag}"`;
+    // 1 と 4 の間にファイルが更新された場合に備え、実際に読んだデータのバージョンを使う
+    const actualVersion = toEtag(csv.version);
     const body = JSON.stringify({ version: actualVersion, headers, rows });
 
     if (actualVersion === version) {
@@ -113,6 +159,13 @@ async function handleMaster(request, env, ctx) {
   } catch (err) {
     return jsonResponse({ error: err.message }, 500);
   }
+}
+
+// 文字コード変換（UTF-8 の BOM 付きなら自動で UTF-8 として読む）
+function decodeCsvBytes(arrayBuffer, encoding) {
+  const b = new Uint8Array(arrayBuffer, 0, Math.min(3, arrayBuffer.byteLength));
+  const hasUtf8Bom = b.length === 3 && b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF;
+  return new TextDecoder(hasUtf8Bom ? 'utf-8' : encoding).decode(arrayBuffer);
 }
 
 // ============================================================

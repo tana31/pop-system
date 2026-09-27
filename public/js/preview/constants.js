@@ -7,6 +7,13 @@
 export const sizeConfigs = SIZE_CONFIGS;
 export const mixedGrid = MIXED_GRID;
 
+// master-schema.js（従来型スクリプト）で定義された商品マスタの列定義への窓口
+// ※ preview.html で master-schema.js を preview.js より先に読み込むこと
+if (!self.MasterSchema) {
+  throw new Error('master-schema.js が読み込まれていません。preview.html の script タグを確認してください。');
+}
+export const MasterSchema = self.MasterSchema;
+
 // A4用紙の寸法（mm）
 export const PAGE_MM = {
   landscape: { w: 297, h: 210 },
