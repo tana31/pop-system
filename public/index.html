@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POP作成システム - 高速連続スキャン</title>
+  <title>POP作成システム</title>
 
   <link rel="stylesheet" href="css/app.css">
 
@@ -14,7 +14,7 @@
 
   <header class="app-header">
     <div class="header-inner">
-      <h1 class="app-title"><span>🏷️</span> POP高速スキャン＆一括印刷システム</h1>
+      <h1 class="app-title">POP作成システム</h1>
       <div id="masterStatus" class="status-badge status-badge--loading">
         <span class="spin">⏳</span> マスタ読み込み中...
       </div>
@@ -27,13 +27,13 @@
     <section class="panel panel--primary">
       <div class="input-grid">
         <div>
-          <label class="field-label field-label--primary" for="janInput">⚡ JANコード連続スキャン（Enterで即時追加）</label>
-          <input type="text" id="janInput" class="jan-input" placeholder="バーコードをスキャン..." autocomplete="off" disabled>
+          <label class="field-label field-label--primary" for="janInput">⚡ JANコード</label>
+          <input type="text" id="janInput" class="jan-input" placeholder="バーコードをスキャン または 入力" autocomplete="off" disabled>
         </div>
 
         <div class="search-box">
-          <label class="field-label" for="searchNameInput">🔍 商品名あいまい検索</label>
-          <input type="text" id="searchNameInput" class="search-input" placeholder="商品名の一部を入力..." autocomplete="off" disabled>
+          <label class="field-label" for="searchNameInput">🔍 商品検索</label>
+          <input type="text" id="searchNameInput" class="search-input" placeholder="" autocomplete="off" disabled>
           <div id="searchSuggestions" class="suggestions hidden"></div>
         </div>
       </div>

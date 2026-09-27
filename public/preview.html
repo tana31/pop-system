@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POP A4面付けPDFプレビュー</title>
+  <title>印刷プレビュー - POP作成システム</title>
 
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/pop-styles.css">
@@ -20,7 +20,7 @@
   <header class="app-header">
     <div class="header-inner">
       <div class="header-left">
-        <a href="index.html" class="btn-back">← スキャン画面に戻る</a>
+        <a href="index.html" class="btn-back">← 戻る</a>
         <h1 class="app-title"><span>📄</span> A4面付けPDFプレビュー</h1>
       </div>
 
@@ -28,8 +28,8 @@
         <label class="control">
           <span class="control__label">面付けモード:</span>
           <select id="modeSelect" class="select select--bold">
-            <option value="mixed">1枚のA4に混載して節約 (自動面付け)</option>
-            <option value="separated">規格ごとに用紙を分ける</option>
+            <option value="mixed">1枚のA4にまとめる</option>
+            <option value="separated">サイズごとに用紙を分ける</option>
           </select>
         </label>
 
@@ -40,7 +40,7 @@
           </select>
         </label>
 
-        <button type="button" id="downloadPdfBtn" class="btn-download">⬇️ A4-PDFファイルを直接ダウンロード</button>
+        <button type="button" id="downloadPdfBtn" class="btn-download">PDFを作成(A4サイズ)</button>
       </div>
     </div>
   </header>

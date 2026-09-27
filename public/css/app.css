@@ -39,7 +39,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "メイリオ", sans-serif;
   line-height: 1.5;
 }
 h1, h2, h3, p { margin: 0; }
