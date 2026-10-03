@@ -6,9 +6,12 @@
  *
  * 印刷待機リストの各項目はフォームで修正でき、修正内容は印刷キューに保存されてプレビュー・PDFに反映される。
  * 修正はこのリスト内だけのもので、商品マスタ（R2のCSV）は変更しない。
+ *
+ * 店舗番号はヘッダーで入力し、この端末に記憶する（localStorage の STORE_STORAGE_KEY）。
+ * マスタWorker には検索のたびに店舗番号を渡し、その店舗の価格（例外価格が無ければ標準価格）を受け取る。
  */
 import { SIZE_CONFIGS, DEFAULT_SIZE_KEY, createDefaultCounts } from '../shared/pop-sizes.js';
-import { calcPriceExcl } from '../shared/price.js';
+import { calcPriceIncl } from '../shared/price.js';
 import { loadQueue, saveQueue as storeQueue, toCount } from '../shared/print-queue.js';
 
 const SIZE_LIST = Object.values(SIZE_CONFIGS);
@@ -24,15 +27,20 @@ const EDIT_FIELDS = [
   { key: 'qty1',      label: '数量1',      span: 2 },
   { key: 'qty2',      label: '数量2',      span: 2 },
   { key: 'risk',      label: '医薬品区分', span: 2 },
-  { key: 'price',     label: '税込価格',   span: 3, price: true },
-  { key: 'priceExcl', label: '税抜価格',   span: 3, price: true }
+  { key: 'priceExcl', label: '税抜価格',   span: 3, price: true },
+  { key: 'price',     label: '税込価格',   span: 3, price: true }
 ];
+
+// 店舗番号を記憶する localStorage のキー（印刷キューとは別に、この端末の設定として持つ）
+const STORE_STORAGE_KEY = 'pop_store_code';
 
 let popQueue = [];
 let globalOptionsVisible = false;
+let currentStore = loadStoreCode();
 
 // ---- DOM要素 ----
 const masterStatus = document.getElementById('masterStatus');
+const storeInput = document.getElementById('storeInput');
 const janInput = document.getElementById('janInput');
 const searchNameInput = document.getElementById('searchNameInput');
 const searchSuggestions = document.getElementById('searchSuggestions');
@@ -50,6 +58,69 @@ function escapeHtml(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
+}
+
+// ============================================================
+// 店舗番号（この端末に記憶する）
+// ============================================================
+function normalizeStoreInput(value) {
+  return String(value ?? '').normalize('NFKC').replace(/\s/g, '');
+}
+
+function loadStoreCode() {
+  try {
+    return normalizeStoreInput(localStorage.getItem(STORE_STORAGE_KEY));
+  } catch {
+    return '';
+  }
+}
+
+function saveStoreCode(code) {
+  try {
+    if (code) localStorage.setItem(STORE_STORAGE_KEY, code);
+    else localStorage.removeItem(STORE_STORAGE_KEY);
+  } catch (err) {
+    console.warn('[scan-app] 店舗番号を保存できませんでした', err);
+  }
+}
+
+function renderStoreInput() {
+  storeInput.value = currentStore;
+  storeInput.classList.toggle('store-input--empty', !currentStore);
+}
+
+let repricing = false;
+
+/** 店舗番号を切り替え、リストの未修正の商品をその店舗の価格に取り直す */
+async function changeStore(rawValue) {
+  const code = normalizeStoreInput(rawValue);
+  if (code === currentStore || repricing) {
+    renderStoreInput();
+    return;
+  }
+  currentStore = code;
+  saveStoreCode(code);
+  renderStoreInput();
+
+  // マスタが使えない間は取り直せない（lookup が終わらなくなるため）
+  if (!inputsEnabled || popQueue.length === 0) return;
+
+  repricing = true;
+  storeInput.disabled = true;
+  let kept = 0;
+  try {
+    for (const q of popQueue) {
+      if (q.edited) { kept++; continue; }
+      const fresh = await askMaster('lookup', { jan: q.item.jan, store: currentStore });
+      if (fresh) q.item = fresh;
+    }
+  } finally {
+    repricing = false;
+    storeInput.disabled = false;
+  }
+  renderQueueList();
+  const label = currentStore ? `店舗 ${currentStore}` : '標準価格';
+  showScanNotice(`${label}の価格に切り替えました${kept ? `（修正済みの ${kept} 件はそのまま）` : ''}`, false, '');
 }
 
 // ============================================================
@@ -148,7 +219,7 @@ janInput.addEventListener('keydown', async (e) => {
   janInput.value = '';          // 連続スキャンに備えて即クリア
   if (!jan) return;
 
-  const item = await askMaster('lookup', { jan });
+  const item = await askMaster('lookup', { jan, store: currentStore });
   if (item) {
     addItemToQueue(item);
     showScanNotice(`「${item.name}」を追加しました`);
@@ -173,12 +244,22 @@ janInput.addEventListener('keydown', async (e) => {
 
     searchTimer = setTimeout(async () => {
       const seq = ++searchSeq;
-      const matches = await askMaster('search', { keyword, limit: 20 });
+      const matches = await askMaster('search', { keyword, limit: 20, store: currentStore });
       if (seq !== searchSeq) return; // 古い検索結果は表示しない
       renderSuggestions(matches);
     }, 150);
   });
 }
+
+storeInput.addEventListener('change', () => changeStore(storeInput.value));
+
+// 店舗番号欄で Enter → 確定してスキャン欄へ戻す
+storeInput.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  storeInput.blur();        // change イベントが先に発生して店舗が切り替わる
+  if (!janInput.disabled) janInput.focus();
+});
 
 toggleAllOptionsBtn.addEventListener('click', () => {
   globalOptionsVisible = !globalOptionsVisible;
@@ -254,13 +335,13 @@ function updateItemField(idx, key, rawValue) {
   const item = q.item;
   const value = String(rawValue ?? '').trim();
 
-  if (key === 'price') {
+  if (key === 'priceExcl') {
+    // 税抜を直すと、その商品の税率で税込を計算し直す（税率が無ければ税込はそのまま）
+    item.priceExcl = toPrice(value);
+    const incl = calcPriceIncl(item.priceExcl, item.taxRate ?? null);
+    if (incl !== null) item.price = incl;
+  } else if (key === 'price') {
     item.price = toPrice(value);
-    if (item.priceExclAuto) item.priceExcl = calcPriceExcl(item.price);
-  } else if (key === 'priceExcl') {
-    // 空欄にすると「税込から自動計算」に戻る
-    item.priceExclAuto = value === '';
-    item.priceExcl = item.priceExclAuto ? calcPriceExcl(item.price) : toPrice(value);
   } else {
     item[key] = value;
   }
@@ -278,7 +359,7 @@ function toPrice(value) {
 /** マスタから同じJANの商品を取り直して、修正を取り消す */
 async function resetItemToMaster(idx) {
   const q = popQueue[idx];
-  const fresh = await askMaster('lookup', { jan: q.item.jan });
+  const fresh = await askMaster('lookup', { jan: q.item.jan, store: currentStore });
   if (!fresh) {
     showScanNotice(`JAN ${q.item.jan} はマスタに見つからないため、元に戻せませんでした`, true);
     return;
@@ -287,7 +368,7 @@ async function resetItemToMaster(idx) {
   q.edited = false;
 }
 
-/** 修正後のカード表示（修正済みバッジ・税抜の自動計算表示）だけを更新 */
+/** 修正後のカード表示（修正済みバッジ・価格欄）だけを更新 */
 function refreshCardState(idx) {
   const card = queueListContainer.querySelector(`.queue-card[data-idx="${idx}"]`);
   if (!card) return;
@@ -295,10 +376,7 @@ function refreshCardState(idx) {
   card.classList.toggle('is-edited', !!q.edited);
 
   const exclInput = card.querySelector('.item-input[data-key="priceExcl"]');
-  if (exclInput) {
-    exclInput.placeholder = exclPlaceholder(q.item);
-    exclInput.value = q.item.priceExclAuto ? '' : q.item.priceExcl;
-  }
+  if (exclInput) exclInput.value = q.item.priceExcl;
   const priceInput = card.querySelector('.item-input[data-key="price"]');
   if (priceInput) priceInput.value = q.item.price;
 }
@@ -307,9 +385,9 @@ function refreshCardState(idx) {
 // 画面描画
 // ============================================================
 let noticeTimer = null;
-function showScanNotice(text, isError = false) {
+function showScanNotice(text, isError = false, sub = 'リスト先頭に追加しました') {
   scanNoticeText.textContent = text;
-  scanNoticeSub.textContent = isError ? '' : 'リスト先頭に追加しました';
+  scanNoticeSub.textContent = isError ? '' : sub;
   scanNotice.className = `notice ${isError ? 'notice--error' : 'notice--success'}`;
 
   clearTimeout(noticeTimer);
@@ -362,27 +440,25 @@ function addItemToQueue(item) {
   renderQueueList();
 }
 
-/** 税抜価格欄の案内（空欄＝自動計算であることを示す） */
-function exclPlaceholder(item) {
-  return `自動: ${calcPriceExcl(item.price).toLocaleString()}`;
+/** 修正欄の見出しの補足（税込価格には税率を示す） */
+function fieldNote(f, item) {
+  if (!f.price) return '';
+  if (f.key !== 'price') return '（円）';
+  const rate = item.taxRate ?? null;
+  return rate === null ? '（円・税率なし）' : `（円・${rate}%）`;
 }
 
 /** 商品情報の修正欄 */
 function itemFieldHtml(f, item, idx) {
-  let value = item[f.key] ?? '';
-  let extra = '';
-  if (f.key === 'priceExcl') {
-    if (item.priceExclAuto) value = '';
-    extra = ` placeholder="${escapeHtml(exclPlaceholder(item))}"`;
-  }
+  const value = item[f.key] ?? '';
   const inputAttrs = f.price
     ? `type="number" min="0" step="1" inputmode="numeric"`
     : `type="text"`;
   return `
     <label class="item-field item-field--span${f.span}">
-      <span class="item-field__label">${f.label}${f.price ? '（円）' : ''}</span>
+      <span class="item-field__label">${f.label}${escapeHtml(fieldNote(f, item))}</span>
       <input ${inputAttrs} class="item-input${f.price ? ' item-input--price' : ''}${f.key === 'price' ? ' item-input--incl' : ''}"
-        data-idx="${idx}" data-key="${f.key}" value="${escapeHtml(value)}"${extra} autocomplete="off">
+        data-idx="${idx}" data-key="${f.key}" value="${escapeHtml(value)}" autocomplete="off">
     </label>`;
 }
 
@@ -452,6 +528,7 @@ function renderQueueList() {
 // ============================================================
 // 初期化（type="module" は DOM 構築後に実行されるので DOMContentLoaded 不要）
 // ============================================================
+renderStoreInput();
 restoreQueue();
 renderQueueList();
 masterWorker.postMessage({ type: 'init' });

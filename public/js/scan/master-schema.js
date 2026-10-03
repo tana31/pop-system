@@ -1,41 +1,59 @@
 /**
- * 商品マスタの列定義と、CSVの1行 →「商品データ」への変換（★列名はこのファイルだけで管理する★）
+ * 商品マスタの列定義と、マスタの行 →「商品データ」への変換（★列名はこのファイルだけで管理する★）
  *
  * 使うのはマスタWorker（master-worker.js）だけ。
  * 画面側（スキャン画面・プレビュー画面）は列名を知らず、変換済みの商品データだけを扱う。
  *
- * 取得元のCSVの列名が変わったら、COLUMNS の候補に新しい列名を追加するだけでよい。
- * 候補は左から順に探し、最初に値が入っていた列を使う。
+ * マスタは軽量化バッチ（pop-master-batch.ps1）が作る次の形の CSV で、/api/master が
+ * { version, headers, rows } に変換して返す:
+ *   type,jan,store,taxRate,priceExcl,price,maker,name,qty1,qty2,comment,risk
+ *   I 行 … 1商品1行。共通項目と標準価格（store は空）
+ *   P 行 … 標準価格と違う店舗だけの例外価格（jan・store・priceExcl・price だけが入る）
+ * 列の並びが変わっても見出しの名前で探すので動く。列名を変えるときはバッチ・Worker（index.js の
+ * MASTER_HEADER）・このファイルの COLUMNS を揃えて変える。
  *
  * 商品データの形（画面に渡す・印刷キューに保存する形）:
  *   {
  *     jan: string,        // 正規化済み（全角→半角、空白・ハイフン除去）
- *     name, maker, comment, qty1, qty2, risk: string,
- *     price: number,      // 税込価格
- *     priceExcl: number,  // 税抜価格（列が空なら 税込 ÷ 1.1 を四捨五入）
- *     priceExclAuto: boolean // true = 税抜価格を税込から計算した（スキャン画面で税込を直すと追従する）
+ *     name, maker, comment, qty1, qty2, risk: string,  // risk は「通常商品」なら空
+ *     priceExcl: number,  // 税抜価格（店舗の例外価格があればそちら）
+ *     price: number,      // 税込価格（同上）
+ *     taxRate: number|null // 税率（%）。null なら修正フォームで税込を自動計算しない
  *   }
  */
-import { calcPriceExcl } from '../shared/price.js';
 
 export const COLUMNS = {
-  jan:       ['JANコード', 'JAN', 'jan'],
-  name:      ['品名', '商品名'],
-  maker:     ['製造メーカー', 'メーカー'],
-  price:     ['販売価格(税込)', '税込価格'],
-  priceExcl: ['販売価格(税抜)', '税抜価格'],
-  comment:   ['コメント', 'アピール文'],
-  qty1:      ['数量1', '内容量'],
-  qty2:      ['数量2', '規格'],
-  risk:      ['リスク分類', '医薬品区分']
+  type:      'type',
+  jan:       'jan',
+  store:     'store',
+  taxRate:   'taxRate',
+  priceExcl: 'priceExcl',
+  price:     'price',
+  maker:     'maker',
+  name:      'name',
+  qty1:      'qty1',
+  qty2:      'qty2',
+  comment:   'comment',
+  risk:      'risk'
 };
 
-// 必須列（見つからなければコンソールに警告）
-export const REQUIRED_KEYS = ['jan', 'name', 'price'];
+/** 行の種別 */
+export const ROW_TYPE = { ITEM: 'I', PRICE: 'P' };
+
+// 必須列（1つでも無ければマスタの形式が違うとみなす）
+export const REQUIRED_KEYS = Object.keys(COLUMNS);
+
+// POP に表示しない医薬品区分の値（医薬品以外の商品）
+export const HIDDEN_RISK_LABELS = ['通常商品'];
 
 /** JAN: 全角数字→半角、空白・ハイフン除去 */
 export function normalizeJan(value) {
   return String(value ?? '').normalize('NFKC').replace(/[\s-]/g, '');
+}
+
+/** 店舗番号: 全角数字→半角、空白除去（先頭の 0 は残す） */
+export function normalizeStore(value) {
+  return String(value ?? '').normalize('NFKC').replace(/\s/g, '');
 }
 
 /** 価格: 「1,000」「¥1000」「１０００円」なども数値に変換（変換できなければ 0） */
@@ -45,9 +63,17 @@ export function parsePrice(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** CSVの見出しに無い必須列のキーを返す */
+/** 税率: 空や数字でなければ null */
+function parseTaxRate(value) {
+  const s = String(value ?? '').normalize('NFKC').replace(/[%\s]/g, '');
+  if (s === '') return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** 見出しに無い必須列のキーを返す */
 export function findMissingRequired(headers) {
-  return REQUIRED_KEYS.filter(key => !COLUMNS[key].some(col => headers.includes(col)));
+  return REQUIRED_KEYS.filter(key => !headers.includes(COLUMNS[key]));
 }
 
 /**
@@ -56,37 +82,39 @@ export function findMissingRequired(headers) {
  */
 export function createRowReader(headers) {
   const cols = {};
-  for (const key of Object.keys(COLUMNS)) {
-    cols[key] = COLUMNS[key].map(n => headers.indexOf(n)).filter(i => i >= 0);
-  }
+  for (const key of Object.keys(COLUMNS)) cols[key] = headers.indexOf(COLUMNS[key]);
 
   const read = (row, key) => {
-    for (const c of cols[key]) {
-      const v = row[c];
-      if (v != null && String(v).trim() !== '') return String(v).trim();
-    }
-    return '';
+    const c = cols[key];
+    if (c < 0) return '';
+    const v = row[c];
+    return v == null ? '' : String(v).trim();
   };
 
   return {
-    jan:  row => normalizeJan(read(row, 'jan')),
-    name: row => read(row, 'name'),
+    type:  row => read(row, 'type'),
+    jan:   row => normalizeJan(read(row, 'jan')),
+    store: row => normalizeStore(read(row, 'store')),
+    name:  row => read(row, 'name'),
 
-    /** 1行を商品データに変換 */
-    toItem(row) {
-      const price = parsePrice(read(row, 'price'));
-      const rawExcl = read(row, 'priceExcl');
+    /**
+     * 商品行（I 行）を商品データに変換する。
+     * priceRow に店舗の例外価格行（P 行）を渡すと、価格だけそちらを使う
+     */
+    toItem(row, priceRow = null) {
+      const p = priceRow || row;
+      const risk = read(row, 'risk');
       return {
         jan:       normalizeJan(read(row, 'jan')),
         name:      read(row, 'name'),
         maker:     read(row, 'maker'),
-        price,
-        priceExcl: rawExcl ? parsePrice(rawExcl) : calcPriceExcl(price),
-        priceExclAuto: !rawExcl,
+        priceExcl: parsePrice(read(p, 'priceExcl')),
+        price:     parsePrice(read(p, 'price')),
+        taxRate:   parseTaxRate(read(row, 'taxRate')),
         comment:   read(row, 'comment'),
         qty1:      read(row, 'qty1'),
         qty2:      read(row, 'qty2'),
-        risk:      read(row, 'risk')
+        risk:      HIDDEN_RISK_LABELS.includes(risk) ? '' : risk
       };
     }
   };

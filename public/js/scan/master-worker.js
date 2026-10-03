@@ -4,11 +4,13 @@
  *  - 取得したマスタは IndexedDB に保存し、次回以降は即座に利用
  *  - 裏でサーバーにバージョン確認し、変わっていれば自動で差し替え
  *  - 列名の解決はここで完結し、画面には変換済みの「商品データ」だけを渡す
+ *  - 価格は「指定された店舗の例外価格（P 行）があればそれ、無ければ標準価格（I 行）」
  *
  * 起動: new Worker(new URL('./master-worker.js', import.meta.url), { type: 'module' })
  *
  * メッセージ:
- *   受信: {type:'init'} / {type:'lookup', id, jan} / {type:'search', id, keyword, limit}
+ *   受信: {type:'init'} / {type:'lookup', id, jan, store} / {type:'search', id, keyword, limit, store}
+ *         store は店舗番号（空なら標準価格）
  *   送信: {type:'status', state, count?, message?} / {type:'result', id, data}
  *
  * state の種類（画面の表示と1対1）:
@@ -19,7 +21,7 @@
  *   offline   … サーバーに接続できず、キャッシュで利用中
  *   error     … キャッシュも無く、取得にも失敗
  */
-import { normalizeJan, createRowReader, findMissingRequired, COLUMNS } from './master-schema.js';
+import { normalizeJan, normalizeStore, createRowReader, findMissingRequired, COLUMNS, ROW_TYPE } from './master-schema.js';
 
 const API_URL = '/api/master';
 const DB_NAME = 'pop-master-cache';
@@ -29,8 +31,10 @@ const RECORD_KEY = 'current';
 
 let rows = [];
 let reader = null;
-let janIndex = new Map();   // JAN → 行番号（同じJANが複数あれば後ろの行が優先）
-let nameIndex = [];         // 正規化済み商品名（検索用）
+let itemRowIdx = [];        // 商品行（I 行）の行番号。検索はこの順に行う
+let janIndex = new Map();   // JAN → 商品行の行番号（同じJANが複数あれば後ろの行が優先）
+let priceIndex = new Map(); // "店舗番号\tJAN" → 例外価格行（P 行）の行番号
+let nameIndex = [];         // 正規化済み商品名（itemRowIdx と同じ並び。検索用）
 
 let initialized = false;
 let resolveReady;
@@ -44,11 +48,11 @@ self.onmessage = async (e) => {
       break;
     case 'lookup':
       await ready;
-      reply(msg.id, lookup(msg.jan));
+      reply(msg.id, lookup(msg.jan, msg.store));
       break;
     case 'search':
       await ready;
-      reply(msg.id, search(msg.keyword, msg.limit || 20));
+      reply(msg.id, search(msg.keyword, msg.limit || 20, msg.store));
       break;
   }
 };
@@ -58,7 +62,7 @@ function reply(id, data) {
 }
 
 function postStatus(state, extra = {}) {
-  self.postMessage({ type: 'status', state, count: rows.length, ...extra });
+  self.postMessage({ type: 'status', state, count: itemRowIdx.length, ...extra });
 }
 
 // ------------------------------------------------------------
@@ -96,11 +100,13 @@ async function init() {
     if (!cached) postStatus('loading', { message: 'マスタを解析中...' });
 
     const data = await res.json();
-    if (!isValidMaster(data)) throw new Error('マスタの形式が不正です');
-
-    findMissingRequired(data.headers).forEach(key => {
-      console.warn(`[master-worker] 「${key}」の列が見つかりません。master-schema.js の COLUMNS.${key} を確認してください。候補: ${COLUMNS[key].join(', ')}`);
-    });
+    if (!isValidMaster(data)) {
+      const missing = Array.isArray(data?.headers) ? findMissingRequired(data.headers) : [];
+      missing.forEach(key => {
+        console.warn(`[master-worker] 「${COLUMNS[key]}」の列が見つかりません。master-schema.js の COLUMNS と index.js の MASTER_HEADER を確認してください。`);
+      });
+      throw new Error('マスタの形式が不正です');
+    }
 
     buildIndex(data);
     resolveReady();
@@ -118,8 +124,10 @@ async function init() {
   }
 }
 
+// 必須列がそろっていなければ使わない（旧形式のキャッシュもここで捨てられる）
 function isValidMaster(data) {
-  return !!data && Array.isArray(data.headers) && Array.isArray(data.rows);
+  return !!data && Array.isArray(data.headers) && Array.isArray(data.rows)
+    && findMissingRequired(data.headers).length === 0;
 }
 
 // ------------------------------------------------------------
@@ -130,42 +138,71 @@ function normalizeName(s) {
   return String(s ?? '').normalize('NFKC').toLowerCase();
 }
 
+function priceKey(store, jan) {
+  return `${store}\t${jan}`;
+}
+
 function buildIndex(data) {
   const newReader = createRowReader(data.headers);
   const newRows = data.rows;
+  const newItemRowIdx = [];
   const newJanIndex = new Map();
-  const newNameIndex = new Array(newRows.length);
+  const newPriceIndex = new Map();
+  const newNameIndex = [];
 
   for (let i = 0; i < newRows.length; i++) {
     const row = newRows[i];
     const jan = newReader.jan(row);
-    if (jan) newJanIndex.set(jan, i);
-    newNameIndex[i] = normalizeName(newReader.name(row));
+    if (!jan) continue;
+    const type = newReader.type(row);
+
+    if (type === ROW_TYPE.ITEM) {
+      newJanIndex.set(jan, i);
+      newItemRowIdx.push(i);
+      newNameIndex.push(normalizeName(newReader.name(row)));
+    } else if (type === ROW_TYPE.PRICE) {
+      const store = newReader.store(row);
+      if (store) newPriceIndex.set(priceKey(store, jan), i);
+    }
   }
 
   // 検索中に中途半端な状態が見えないよう、最後にまとめて差し替える
   rows = newRows;
   reader = newReader;
+  itemRowIdx = newItemRowIdx;
   janIndex = newJanIndex;
+  priceIndex = newPriceIndex;
   nameIndex = newNameIndex;
 }
 
 // ------------------------------------------------------------
 // 検索（結果は商品データの形で返す）
 // ------------------------------------------------------------
-function lookup(jan) {
+/** 商品行を、店舗の価格を当てはめた商品データにする */
+function toItemForStore(rowIdx, store) {
+  const row = rows[rowIdx];
+  let priceRow = null;
+  if (store) {
+    const p = priceIndex.get(priceKey(store, reader.jan(row)));
+    if (p !== undefined) priceRow = rows[p];
+  }
+  return reader.toItem(row, priceRow);
+}
+
+function lookup(jan, store) {
   const key = normalizeJan(jan);
   if (!key) return null;
   const idx = janIndex.get(key);
-  return idx === undefined ? null : reader.toItem(rows[idx]);
+  return idx === undefined ? null : toItemForStore(idx, normalizeStore(store));
 }
 
-function search(keyword, limit) {
+function search(keyword, limit, store) {
   const kw = normalizeName(keyword).trim();
   if (!kw) return [];
+  const st = normalizeStore(store);
   const out = [];
   for (let i = 0; i < nameIndex.length && out.length < limit; i++) {
-    if (nameIndex[i].includes(kw)) out.push(reader.toItem(rows[i]));
+    if (nameIndex[i].includes(kw)) out.push(toItemForStore(itemRowIdx[i], st));
   }
   return out;
 }

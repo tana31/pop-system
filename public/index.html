@@ -15,8 +15,14 @@
   <header class="app-header">
     <div class="header-inner">
       <h1 class="app-title">POP作成システム</h1>
-      <div id="masterStatus" class="status-badge status-badge--loading">
-        <span class="spin">⏳</span> マスタ読み込み中...
+      <div class="header-tools">
+        <label class="store-field" for="storeInput">
+          <span>店舗番号</span>
+          <input type="text" id="storeInput" class="store-input" inputmode="numeric" placeholder="未設定" autocomplete="off">
+        </label>
+        <div id="masterStatus" class="status-badge status-badge--loading">
+          <span class="spin">⏳</span> マスタ読み込み中...
+        </div>
       </div>
     </div>
   </header>

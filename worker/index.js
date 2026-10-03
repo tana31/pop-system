@@ -8,15 +8,34 @@
  *
  * 取得元を R2 から社内サーバー等に切り替えても、この約束を守れば
  * scan-app.js / master-worker.js は変更不要。
- * 列名の扱いはフロント側の js/master-schema.js で管理している。
+ * 列名の扱いはフロント側の js/scan/master-schema.js で管理している。
+ *
+ * ============================================================
+ * PUT /api/admin/master（軽量化バッチ pop-master-batch.ps1 からのアップロード）
+ * ============================================================
+ *  - Authorization: Bearer <トークン>。トークンは Worker のシークレット UPLOAD_TOKEN
+ *    （`npx wrangler secret put UPLOAD_TOKEN` で登録。コードや設定ファイルには書かない）
+ *  - 本文は UTF-8 の CSV。1行目が MASTER_HEADER と一致し、2行目以降が I 行か P 行であること
+ *  - 現在のマスタを masters/backup/ に退避してから差し替える（新しいものから BACKUP_KEEP 件を残す）
  */
 
 // レスポンス形式や文字コード設定を変えたらここを上げる（各端末のキャッシュが自動で無効化される）
-const MASTER_FORMAT = 'v2';
+const MASTER_FORMAT = 'v3';
 
 // CSVの文字コード（wrangler の vars で MASTER_ENCODING を指定すれば上書き可能）
-// ※ ファイル先頭に UTF-8 の BOM がある場合は自動で UTF-8 として読む
-const DEFAULT_MASTER_ENCODING = 'shift-jis';
+// ※ 軽量化バッチは UTF-8（BOM無し）で出力する。BOM がある場合も UTF-8 として読む
+const DEFAULT_MASTER_ENCODING = 'utf-8';
+
+// マスタの置き場所（wrangler の vars で MASTER_R2_KEY を指定すれば上書き可能）
+const DEFAULT_MASTER_R2_KEY = 'masters/pop-master.csv';
+
+// 軽量化バッチが出力するマスタの見出し行（バッチ・master-schema.js と揃える）
+const MASTER_HEADER = 'type,jan,store,taxRate,priceExcl,price,maker,name,qty1,qty2,comment,risk';
+
+// アップロードの上限サイズと、退避するバックアップ
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const BACKUP_PREFIX = 'masters/backup/';
+const BACKUP_KEEP = 7;
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
@@ -24,6 +43,11 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // PUT /api/admin/master → 軽量化バッチからマスタを受け取り R2 に保存
+    if (path === '/api/admin/master') {
+      return handleMasterUpload(request, env);
+    }
 
     // GET /api/master → 商品マスタを軽量JSON（headers + rows配列）で返す
     if (path === '/api/master') {
@@ -71,8 +95,12 @@ function createMasterSource(env) {
   return createR2MasterSource(env);
 }
 
+function masterR2Key(env) {
+  return env.MASTER_R2_KEY || DEFAULT_MASTER_R2_KEY;
+}
+
 function createR2MasterSource(env) {
-  const key = env.MASTER_R2_KEY || 'masters/item_master.csv';
+  const key = masterR2Key(env);
   return {
     async getVersion() {
       const head = await env.MY_R2_BUCKET.head(key);
@@ -159,6 +187,116 @@ async function handleMaster(request, env, ctx) {
   } catch (err) {
     return jsonResponse({ error: err.message }, 500);
   }
+}
+
+// ============================================================
+// PUT /api/admin/master（軽量化バッチからのアップロード）
+// ============================================================
+async function handleMasterUpload(request, env) {
+  const noStore = { 'Cache-Control': 'no-store' };
+
+  if (request.method !== 'PUT') {
+    return jsonResponse({ error: 'PUT で送信してください。' }, 405, { ...noStore, 'Allow': 'PUT' });
+  }
+  if (!env.UPLOAD_TOKEN) {
+    return jsonResponse({ error: 'Worker にシークレット UPLOAD_TOKEN が登録されていません。' }, 503, noStore);
+  }
+  if (!(await isAuthorized(request, env.UPLOAD_TOKEN))) {
+    return jsonResponse({ error: '認証に失敗しました。' }, 401, noStore);
+  }
+
+  const declared = Number(request.headers.get('Content-Length') || 0);
+  if (declared > MAX_UPLOAD_BYTES) {
+    return jsonResponse({ error: `ファイルが大きすぎます（上限 ${MAX_UPLOAD_BYTES} バイト）。` }, 413, noStore);
+  }
+
+  try {
+    const bytes = await request.arrayBuffer();
+    if (bytes.byteLength === 0) {
+      return jsonResponse({ error: '本文が空です。' }, 400, noStore);
+    }
+    if (bytes.byteLength > MAX_UPLOAD_BYTES) {
+      return jsonResponse({ error: `ファイルが大きすぎます（上限 ${MAX_UPLOAD_BYTES} バイト）。` }, 413, noStore);
+    }
+
+    let text;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      return jsonResponse({ error: 'UTF-8 の CSV ではありません。' }, 400, noStore);
+    }
+
+    const summary = summarizeMasterCsv(text);
+    if (summary.error) {
+      return jsonResponse({ error: summary.error }, 400, noStore);
+    }
+
+    const key = masterR2Key(env);
+    await backupCurrentMaster(env, key);
+    await env.MY_R2_BUCKET.put(key, bytes, {
+      httpMetadata: { contentType: 'text/csv; charset=utf-8' }
+    });
+
+    return jsonResponse({
+      ok: true,
+      items: summary.items,
+      exceptions: summary.exceptions,
+      bytes: bytes.byteLength
+    }, 200, noStore);
+
+  } catch (err) {
+    return jsonResponse({ error: err.message }, 500, noStore);
+  }
+}
+
+/** Authorization: Bearer のトークンを、長さや内容で処理時間が変わらない方法で比べる */
+async function isAuthorized(request, expected) {
+  const auth = request.headers.get('Authorization') || '';
+  const m = auth.match(/^Bearer\s+(.+)$/);
+  if (!m) return false;
+  const enc = new TextEncoder();
+  // ハッシュにしてから比べると長さが揃い、timingSafeEqual が使える
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(m[1].trim())),
+    crypto.subtle.digest('SHA-256', enc.encode(expected))
+  ]);
+  return crypto.subtle.timingSafeEqual(a, b);
+}
+
+/** 見出し行と各行の種別を確認し、件数を返す。問題があれば { error } */
+function summarizeMasterCsv(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const lines = text.split(/\r?\n/);
+  if (lines[0].trim() !== MASTER_HEADER) {
+    return { error: `見出し行が想定と違います: ${lines[0].slice(0, 200)}` };
+  }
+  let items = 0;
+  let exceptions = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === '') continue;
+    if (line.startsWith('I,')) items++;
+    else if (line.startsWith('P,')) exceptions++;
+    else return { error: `${i + 1} 行目の種別が I でも P でもありません。` };
+  }
+  if (items === 0) return { error: '商品行（I 行）がありません。' };
+  return { items, exceptions };
+}
+
+/** 現在のマスタを masters/backup/ に退避し、古いバックアップを削除する */
+async function backupCurrentMaster(env, key) {
+  const current = await env.MY_R2_BUCKET.get(key);
+  if (!current) return;
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  await env.MY_R2_BUCKET.put(`${BACKUP_PREFIX}pop-master-${stamp}.csv`, await current.arrayBuffer(), {
+    httpMetadata: { contentType: 'text/csv; charset=utf-8' }
+  });
+
+  const listed = await env.MY_R2_BUCKET.list({ prefix: BACKUP_PREFIX });
+  const keys = listed.objects.map(o => o.key).sort();   // 名前に日時が入っているので名前順＝古い順
+  const old = keys.slice(0, Math.max(0, keys.length - BACKUP_KEEP));
+  if (old.length > 0) await env.MY_R2_BUCKET.delete(old);
 }
 
 // 文字コード変換（UTF-8 の BOM 付きなら自動で UTF-8 として読む）
