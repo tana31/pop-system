@@ -1,6 +1,9 @@
 /**
  * プレビュー画面の入口（preview.html から読み込む唯一のスクリプト）
  * 印刷キュー読込 → テーマ取得 → 面付け計算 → DOM描画。モードかデザインを変えるたびに面付けからやり直す
+ *
+ * 各 A4 ページの上には「1 / 3」のページ番号を付ける（.page-label。PDF には入らない）。
+ * PDF の作成結果やエラーは、スキャン画面と同じく画面左下の通知で知らせる。
  */
 import { SIZE_CONFIGS, MIXED_GRID } from '../shared/pop-sizes.js';
 import { loadQueue, countTotalPops } from '../shared/print-queue.js';
@@ -15,16 +18,19 @@ const themeSelect = document.getElementById('themeSelect');
 const downloadBtn = document.getElementById('downloadPdfBtn');
 const statusInfo = document.getElementById('statusInfo');
 const renderArea = document.getElementById('pdfRenderArea');
+const notice = document.getElementById('previewNotice');
+const noticeText = document.getElementById('previewNoticeText');
 
 const queue = loadQueue();
 const totalPops = countTotalPops(queue);
 let themes = [];
+let themeWarning = '';   // テーマを取得できなかったときの文言（集計の代わりに出し続ける）
 
 init();
 
 async function init() {
   if (totalPops === 0) {
-    statusInfo.textContent = '印刷対象のPOPがありません。';
+    setStatus('印刷するPOPがありません');
     renderArea.replaceChildren(renderEmptyState());
     modeSelect.disabled = themeSelect.disabled = downloadBtn.disabled = true;
     return;
@@ -34,7 +40,7 @@ async function init() {
     themes = await fetchThemes();
   } catch (err) {
     console.error(err);
-    statusInfo.textContent = `⚠️ ${err.message}（標準の配色で表示します）`;
+    themeWarning = `デザインを読み込めませんでした（標準の配色で表示します）: ${err.message}`;
   }
 
   themeSelect.innerHTML = themes.length
@@ -65,13 +71,28 @@ function render() {
     : buildSeparatedPages(queue, SIZE_CONFIGS);
 
   const getTheme = themeResolver();
-  renderArea.replaceChildren(...pages.map(p => renderPage(p, getTheme)));
+  const n = pages.length;
+  // ページ番号はページの外（.a4-page の前）に置くので、PDF には写らない
+  renderArea.replaceChildren(...pages.flatMap((p, i) => [pageLabel(i + 1, n), renderPage(p, getTheme)]));
   fitPopText(renderArea);
 
-  // テーマ取得エラーの表示中は上書きしない
-  if (!statusInfo.textContent.startsWith('⚠️')) {
-    statusInfo.textContent = `商品 ${queue.length}件 ／ POP 合計 ${totalPops}枚 ／ A4 ${pages.length}ページ`;
+  if (themeWarning) {
+    setStatus(themeWarning, true);
+  } else {
+    setStatus(`商品 ${queue.length}件 ／ POP ${totalPops}枚 ／ A4 ${n}ページ`);
   }
+}
+
+function pageLabel(no, total) {
+  const el = document.createElement('div');
+  el.className = 'page-label';
+  el.textContent = `${no} / ${total}`;
+  return el;
+}
+
+function setStatus(text, isWarn = false) {
+  statusInfo.textContent = text;
+  statusInfo.classList.toggle('status-info--warn', isWarn);
 }
 
 async function downloadPdf() {
@@ -80,16 +101,28 @@ async function downloadPdf() {
 
   const label = downloadBtn.textContent;
   downloadBtn.disabled = true;
-  downloadBtn.textContent = '⏳ PDFを作成中...';
+  downloadBtn.textContent = 'PDFを作成中…';
+  const fileName = `POP_Print_${todayLocal()}.pdf`;
   try {
-    await exportPagesToPdf(pages, `POP_Print_${todayLocal()}.pdf`);
+    await exportPagesToPdf(pages, fileName);
+    showNotice(`${fileName} をダウンロードしました`);
   } catch (err) {
     console.error(err);
-    alert(`PDFの作成に失敗しました。\n${err.message}`);
+    showNotice(`PDFを作成できませんでした: ${err.message}`, true);
   } finally {
     downloadBtn.disabled = false;
     downloadBtn.textContent = label;
   }
+}
+
+let noticeTimer = null;
+
+/** 画面左下に通知を出す（スキャン画面の通知と同じ見た目） */
+function showNotice(text, isError = false) {
+  noticeText.textContent = text;
+  notice.className = `toast${isError ? ' toast--error' : ''}`;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => notice.classList.add('hidden'), isError ? 8000 : 3000);
 }
 
 /** 端末の現地時刻（日本なら日本時間）で YYYY-MM-DD を返す（toISOString は UTC なので使わない） */

@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>POP作成システム</title>
 
+  <!-- 画面の文字は Noto Sans JP（POP 本体のフォントは pop-styles.css で別に指定） -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap">
   <link rel="stylesheet" href="css/app.css">
 
   <!-- 他のファイルは scan-app.js から import されるので、ここに書くのはこれだけ -->
@@ -20,8 +24,21 @@
           <span>店舗番号</span>
           <input type="text" id="storeInput" class="store-input" inputmode="numeric" placeholder="未設定" autocomplete="off">
         </label>
-        <div id="masterStatus" class="status-badge status-badge--loading">
-          <span class="spin">⏳</span> マスタ読み込み中...
+
+        <!-- メニュー（今後の項目もここに追加する） -->
+        <div class="menu">
+          <button type="button" id="menuBtn" class="menu-btn" aria-label="メニュー"
+            aria-haspopup="true" aria-expanded="false" aria-controls="appMenu">
+            <span class="menu-btn__bars" aria-hidden="true"></span>
+            <span id="menuDot" class="menu-btn__dot menu-btn__dot--loading" aria-hidden="true"></span>
+          </button>
+          <div id="appMenu" class="menu-panel hidden" role="menu">
+            <div class="menu-section">
+              <div class="menu-section__title">マスタ同期</div>
+              <div id="masterStatus" class="master-status master-status--loading" role="status">マスタ読み込み中…</div>
+            </div>
+            <button type="button" id="csvTemplateBtn" class="menu-item" role="menuitem">CSVテンプレートをダウンロード</button>
+          </div>
         </div>
       </div>
     </div>
@@ -29,49 +46,42 @@
 
   <main class="container">
 
-    <!-- STEP 1: JANスキャン / あいまい検索 -->
+    <!-- JANスキャン / 商品名検索 -->
     <section class="panel panel--primary">
       <div class="input-grid">
         <div>
-          <label class="field-label field-label--primary" for="janInput">⚡ JANコード</label>
-          <input type="text" id="janInput" class="jan-input" placeholder="バーコードをスキャン または 入力" autocomplete="off" disabled>
+          <label class="field-label field-label--primary" for="janInput">JANコード</label>
+          <input type="text" id="janInput" class="jan-input" autocomplete="off" disabled>
         </div>
 
         <div class="search-box">
-          <label class="field-label" for="searchNameInput">🔍 商品検索</label>
-          <input type="text" id="searchNameInput" class="search-input" placeholder="" autocomplete="off" disabled>
+          <label class="field-label" for="searchNameInput">商品名で検索</label>
+          <input type="text" id="searchNameInput" class="search-input" autocomplete="off" disabled>
           <div id="searchSuggestions" class="suggestions hidden"></div>
         </div>
       </div>
-
-      <!-- マスタに無い商品・複数商品向け（「〇〇 各種」）の POP。マスタの読み込みを待たずに使える -->
-      <div class="manual-row">
-        <p class="manual-row__text">マスタに無い商品や「じゃがりこ 各種」のような POP は、手入力で作れます（JAN は空欄でも可）。</p>
-        <button type="button" id="manualAddBtn" class="btn-secondary">✏️ 手入力で追加</button>
-      </div>
     </section>
 
-    <!-- STEP 2: 印刷待機リスト -->
+    <!-- 印刷待機リスト -->
     <section class="panel">
       <div class="list-header">
         <h2 class="list-title">
-          <span>📋 印刷待機リスト</span>
+          <span>印刷待機リスト</span>
           <span id="queueCount" class="count-badge">0件</span>
         </h2>
         <div class="toolbar">
-          <button type="button" id="csvImportBtn" class="btn-secondary" disabled>📄 CSVから読み込み</button>
-          <button type="button" id="csvTemplateBtn" class="link-plain">テンプレート</button>
+          <!-- アイコンだけのボタン。名前は aria-label（読み上げ）と title（マウスを乗せたときの表示）で示す -->
+          <button type="button" id="manualAddBtn" class="btn-icon" aria-label="手入力で追加" title="手入力で追加">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          </button>
+          <button type="button" id="csvImportBtn" class="btn-icon" aria-label="CSVから読み込み" title="CSVから読み込み" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
+          </button>
           <input type="file" id="csvFileInput" accept=".csv,text/csv" hidden>
-          <button type="button" id="toggleAllOptionsBtn" class="btn-secondary">⚙️ 全行のオプションサイズ表示切替</button>
-          <button type="button" id="clearQueueBtn" class="link-danger">リストを全クリア</button>
+          <button type="button" id="clearQueueBtn" class="btn-icon btn-icon--danger" aria-label="リストを全クリア" title="リストを全クリア">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h11M3 12h11M3 18h7"/><path d="M15 15l6 6M21 15l-6 6"/></svg>
+          </button>
         </div>
-      </div>
-
-      <!-- スキャン通知バナー -->
-      <div id="scanNotice" class="notice notice--success hidden">
-        <span id="scanNoticeText"></span>
-        <span id="scanNoticeSub" class="notice__sub">リスト先頭に追加しました</span>
-        <button type="button" id="scanNoticeAction" class="notice__action hidden"></button>
       </div>
 
       <!-- CSV 読み込み結果（確認してから置き換える） -->
@@ -86,16 +96,27 @@
 
       <div id="queueListContainer" class="queue-list">
         <div id="emptyQueueMessage" class="empty-message">
-          JANコードをスキャンするか「手入力で追加」を押すと、ここに商品が追加されます。
+          JANコードをスキャンすると、ここに追加されます
         </div>
       </div>
 
+      <!-- 画面下に固定。リストが長くても常に押せる -->
       <div class="actions">
-        <button type="button" id="generatePopBtn" class="btn-primary">🖨️ 印刷プレビュー・PDF出力画面へ進む</button>
+        <span id="queueTotal" class="actions__total"></span>
+        <button type="button" id="generatePopBtn" class="btn-primary">印刷プレビューへ</button>
       </div>
     </section>
 
   </main>
+
+  <!-- 通知（画面左下。リストの位置を動かさない） -->
+  <div id="scanNotice" class="toast hidden" role="status" aria-live="polite">
+    <span class="toast__body">
+      <span id="scanNoticeText" class="toast__text"></span>
+      <span id="scanNoticeSub" class="toast__sub"></span>
+    </span>
+    <button type="button" id="scanNoticeAction" class="toast__action hidden"></button>
+  </div>
 
 </body>
 </html>

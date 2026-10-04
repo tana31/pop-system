@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>印刷プレビュー - POP作成システム</title>
 
+  <!-- 画面の文字は Noto Sans JP（POP 本体のフォントは pop-styles.css で別に指定） -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap">
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/pop-styles.css">
 
@@ -17,38 +21,49 @@
 </head>
 <body class="preview-page">
 
+  <!-- 赤い帯（戻る・題名・PDF）と白い帯（面付け・デザイン・集計）をまとめて上に固定する -->
   <header class="app-header">
     <div class="header-inner">
       <div class="header-left">
-        <a href="index.html" class="btn-back">← 戻る</a>
-        <h1 class="app-title"><span>📄</span> A4面付けPDFプレビュー</h1>
+        <a href="index.html" class="btn-back">‹ リストに戻る</a>
+        <h1 class="app-title">印刷プレビュー</h1>
       </div>
+      <button type="button" id="downloadPdfBtn" class="btn-download">PDFをダウンロード</button>
+    </div>
 
-      <div class="preview-controls">
-        <label class="control">
-          <span class="control__label">面付けモード:</span>
-          <select id="modeSelect" class="select select--bold">
-            <option value="mixed">1枚のA4にまとめる</option>
-            <option value="separated">サイズごとに用紙を分ける</option>
-          </select>
-        </label>
+    <div class="preview-toolbar">
+      <div class="preview-toolbar__inner">
+        <div class="preview-controls">
+          <label class="control">
+            <span class="control__label">面付け</span>
+            <select id="modeSelect" class="select">
+              <option value="mixed">1枚のA4にまとめる</option>
+              <option value="separated">サイズごとに用紙を分ける</option>
+            </select>
+          </label>
 
-        <label class="control">
-          <span class="control__label">デザイン:</span>
-          <select id="themeSelect" class="select select--theme">
-            <option value="">読み込み中...</option>
-          </select>
-        </label>
-
-        <button type="button" id="downloadPdfBtn" class="btn-download">PDFを作成(A4サイズ)</button>
+          <label class="control">
+            <span class="control__label">デザイン</span>
+            <select id="themeSelect" class="select select--theme">
+              <option value="">読み込み中…</option>
+            </select>
+          </label>
+        </div>
+        <div id="statusInfo" class="status-info" role="status"></div>
       </div>
     </div>
   </header>
 
   <main class="preview-main">
-    <div id="statusInfo" class="status-info"></div>
     <div id="pdfRenderArea"></div>
   </main>
+
+  <!-- 通知（画面左下。スキャン画面と同じ形） -->
+  <div id="previewNotice" class="toast hidden" role="status" aria-live="polite">
+    <span class="toast__body">
+      <span id="previewNoticeText" class="toast__text"></span>
+    </span>
+  </div>
 
 </body>
 </html>

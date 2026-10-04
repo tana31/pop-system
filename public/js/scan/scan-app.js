@@ -4,15 +4,18 @@
  * このファイルは画面操作だけを行う。Worker から届くのは変換済みの商品データ
  * （{ jan, name, maker, price, ... }、形は master-schema.js 参照）なので、ここでは列名を扱わない。
  *
- * 印刷待機リストの各項目はフォームで修正でき、修正内容は印刷キューに保存されてプレビュー・PDFに反映される。
+ * 印刷待機リストは1商品2行の表で、各項目はその場で修正でき、修正内容は印刷キューに保存されてプレビュー・PDFに反映される。
  * 修正はこのリスト内だけのもので、商品マスタ（R2のCSV）は変更しない。
  *
  * 店舗番号はヘッダーで入力し、この端末に記憶する（localStorage の STORE_STORAGE_KEY）。
  * マスタWorker には検索のたびに店舗番号を渡し、その店舗の価格（例外価格が無ければ標準価格）を受け取る。
  *
- * マスタに無い商品や「じゃがりこ 各種」のような複数商品向けの POP は「手入力で追加」で作る（source: 'manual'）。
+ * マスタに無い商品や「〇〇 各種」のような複数商品向けの POP は「手入力で追加」で作る（source: 'manual'）。
  * 手入力の行は JAN・税率も入力でき、JAN は空欄でもよい（空欄ならバーコードを印字しない）。
  * マスタから追加した行も「JANを印字しない」（item.noBarcode）にすれば、バーコード無しの POP にできる。
+ *
+ * 画面右上のメニュー（ハンバーガー）に、マスタの同期状態と CSV テンプレートをまとめている。
+ * 通知は画面左下に重ねて出す（リストの位置を動かさないため）。
  */
 import { SIZE_CONFIGS, DEFAULT_SIZE_KEY, createDefaultCounts } from '../shared/pop-sizes.js';
 import { calcPriceIncl } from '../shared/price.js';
@@ -21,35 +24,14 @@ import { importProductCsv, decodeCsvFile, buildTemplateCsv } from './csv-import.
 import { normalizeJan } from './master-schema.js';
 
 const SIZE_LIST = Object.values(SIZE_CONFIGS);
-const PRIMARY_SIZES = SIZE_LIST.filter(c => c.primary);
-const OPTION_SIZES = SIZE_LIST.filter(c => !c.primary);
 
-// 印刷待機リストで修正できる項目（span は 12分割グリッドでの幅）
-// マスタ・CSV の行の JAN は同一商品の判定と「マスタの値に戻す」に使うため修正不可
-const EDIT_FIELDS = [
-  { key: 'name',      label: '商品名',     span: 6 },
-  { key: 'maker',     label: 'メーカー',   span: 3 },
-  { key: 'comment',   label: 'コメント',   span: 3 },
-  { key: 'qty1',      label: '数量1',      span: 2 },
-  { key: 'qty2',      label: '数量2',      span: 2 },
-  { key: 'risk',      label: '医薬品区分', span: 2 },
-  { key: 'priceExcl', label: '税抜価格',   span: 3, price: true },
-  { key: 'price',     label: '税込価格',   span: 3, price: true }
-];
-
-// 手入力の行の項目（JAN と税率も入力できる。並びは 12分割で 3行に収まるようにしている）
-const MANUAL_FIELDS = [
-  { key: 'jan',       label: 'JAN（任意）', span: 3, placeholder: '空欄ならバーコードなし', numeric: true },
-  { key: 'name',      label: '商品名',      span: 6, placeholder: '例: じゃがりこ 各種' },
-  { key: 'maker',     label: 'メーカー',    span: 3 },
-  { key: 'comment',   label: 'コメント',    span: 3 },
-  { key: 'qty1',      label: '数量1',       span: 2 },
-  { key: 'qty2',      label: '数量2',       span: 2 },
-  { key: 'risk',      label: '医薬品区分',  span: 2 },
-  { key: 'taxRate',   label: '税率',        span: 3 },
-  { key: 'priceExcl', label: '税抜価格',    span: 3, price: true },
-  { key: 'price',     label: '税込価格',    span: 3, price: true }
-];
+// 印刷待機リストは「1商品＝2行」の表。列の並び（左から）:
+//   状態アイコン ／ 商品名・JAN・メーカー・コメント ／ 数量1・2 ／ 区分・税率 ／ 税抜・税込
+//   ／ ミックスマッチ（ある行が1つでもあるときだけ）／ サイズ別の枚数 ／ 操作
+// マスタ・CSV の行の JAN は同一商品の判定と「マスタの値に戻す」に使うため修正不可（手入力の行だけ入力欄にする）
+//
+// サイズ別の枚数列は、主要サイズ（pop-sizes.js の primary）を常に出し、それ以外は
+// 「どれかの行で 1枚以上」か「見出しの ＋ で開いた」ときだけ出す（列ごと全行まとめて出し入れする）。
 
 // 手入力の行の税率の選択肢。未選択のままなら税込価格は自動計算しない（手で入力する）
 const TAX_RATE_OPTIONS = [
@@ -67,6 +49,10 @@ let currentStore = loadStoreCode();
 
 // ---- DOM要素 ----
 const masterStatus = document.getElementById('masterStatus');
+const menuBtn = document.getElementById('menuBtn');
+const appMenu = document.getElementById('appMenu');
+const menuDot = document.getElementById('menuDot');
+const queueTotal = document.getElementById('queueTotal');
 const storeInput = document.getElementById('storeInput');
 const janInput = document.getElementById('janInput');
 const searchNameInput = document.getElementById('searchNameInput');
@@ -75,6 +61,7 @@ const queueListContainer = document.getElementById('queueListContainer');
 const emptyQueueMessage = document.getElementById('emptyQueueMessage');
 const queueCount = document.getElementById('queueCount');
 const clearQueueBtn = document.getElementById('clearQueueBtn');
+// 枚数列の出し入れは表の見出しの ＋／− で行う。このボタンは無くてもよい（置けば同じ動きをする）
 const toggleAllOptionsBtn = document.getElementById('toggleAllOptionsBtn');
 const generatePopBtn = document.getElementById('generatePopBtn');
 const scanNotice = document.getElementById('scanNotice');
@@ -191,30 +178,40 @@ masterWorker.onmessage = (e) => {
 
 masterWorker.onerror = (err) => {
   console.error(err);
-  setStatus('error', '⚠️ マスタ処理でエラーが発生しました');
+  setStatus('error', 'マスタ処理でエラーが発生しました');
 };
 
-// Worker の state → [バッジの色, 表示文, 入力を有効にするか]
+// Worker の state → [状態の種類, 表示文, 入力を有効にするか]
+// 状態の種類は loading / ready / warn / error の4つ（メニュー内の表示とメニューボタンの点に使う）
 const STATUS_VIEW = {
-  loading:  (m)     => ['loading', `<span class="spin">⏳</span> ${escapeHtml(m.message)}`, false],
-  checking: (_, n)  => ['ready', `マスタ読込: ${n}件（最新を確認中…）`, true],
-  synced:   (_, n)  => ['ready', `マスタ同期完了: ${n}件`, true],
-  updated:  (_, n)  => ['ready', `マスタ更新済み: ${n}件`, true],
-  offline:  (_, n)  => ['warn', `⚠️ サーバー接続不可・保存済みマスタ使用中: ${n}件`, true],
-  error:    (m)     => ['error', `⚠️ ${escapeHtml(m.message)}`, false]
+  loading:  (m)     => ['loading', m.message || 'マスタ読み込み中…', false],
+  checking: (_, n)  => ['ready', `${n}件（最新を確認中…）`, true],
+  synced:   (_, n)  => ['ready', `同期済み・${n}件`, true],
+  updated:  (_, n)  => ['ready', `更新済み・${n}件`, true],
+  offline:  (_, n)  => ['warn', `サーバーに接続できません。保存済みのマスタ（${n}件）を使用中`, true],
+  error:    (m)     => ['error', m.message || 'マスタを読み込めませんでした', false]
 };
 
-function setStatus(kind, html) {
-  masterStatus.className = `status-badge status-badge--${kind}`;
-  masterStatus.innerHTML = html;
+// マスタが使えない間だけ JAN 欄に理由を出す（使えるようになったら空にする）
+const JAN_PLACEHOLDER = {
+  loading: 'マスタ読み込み中…',
+  error: 'マスタを読み込めません（右上のメニューを確認）'
+};
+
+function setStatus(kind, text) {
+  masterStatus.className = `master-status master-status--${kind}`;
+  masterStatus.textContent = text;
+  menuDot.className = `menu-btn__dot menu-btn__dot--${kind}`;
+  menuBtn.setAttribute('aria-label', kind === 'ready' ? 'メニュー' : `メニュー（マスタ: ${text}）`);
+  if (!inputsEnabled) janInput.placeholder = JAN_PLACEHOLDER[kind] ?? '';
 }
 
 function handleMasterStatus(msg) {
   const view = STATUS_VIEW[msg.state];
   if (!view) return;
-  const [kind, html, enable] = view(msg, (msg.count || 0).toLocaleString());
-  setStatus(kind, html);
+  const [kind, text, enable] = view(msg, (msg.count || 0).toLocaleString());
   if (enable) enableInputs();
+  setStatus(kind, text);
 }
 
 let inputsEnabled = false;
@@ -222,6 +219,7 @@ function enableInputs() {
   if (inputsEnabled) return;
   inputsEnabled = true;
   janInput.disabled = false;
+  janInput.placeholder = '';
   searchNameInput.disabled = false;
   csvImportBtn.disabled = false;
   // 商品名検索に入力中でなければスキャン欄にフォーカス
@@ -260,12 +258,12 @@ janInput.addEventListener('keydown', async (e) => {
 
   const item = await askMaster('lookup', { jan, store: currentStore });
   if (item) {
-    addItemToQueue(item);
-    showScanNotice(`「${item.name}」を追加しました`);
+    const added = addItemToQueue(item);
+    showScanNotice(`「${item.name}」を${added ? '追加しました' : '1枚追加しました'}`);
   } else {
     const code = normalizeJan(jan);
-    showScanNotice(`JAN ${jan} はマスタに見つかりませんでした`, true, '', {
-      label: '✏️ このJANで手入力のPOPを作る',
+    showScanNotice(`JAN ${jan} はマスタにありません`, true, '', {
+      label: 'このJANで手入力',
       run: () => addManualItem(code)
     });
   }
@@ -306,17 +304,19 @@ storeInput.addEventListener('keydown', (e) => {
   if (!janInput.disabled) janInput.focus();
 });
 
-toggleAllOptionsBtn.addEventListener('click', () => {
+/** 主要サイズ以外の枚数列をまとめて出し入れする（表の見出しの ＋／− ボタン） */
+function toggleAllOptions() {
   globalOptionsVisible = !globalOptionsVisible;
-  popQueue.forEach(q => q.showOptions = globalOptionsVisible);
   renderQueueList();
-});
+}
+toggleAllOptionsBtn?.addEventListener('click', toggleAllOptions);
 
 clearQueueBtn.addEventListener('click', () => {
-  if (confirm('印刷リストをクリアしますか？')) {
+  if (confirm('印刷待機リストをすべて削除しますか？')) {
     popQueue = [];
     renderQueueList();
   }
+  focusJan();
 });
 
 generatePopBtn.addEventListener('click', () => {
@@ -328,32 +328,23 @@ generatePopBtn.addEventListener('click', () => {
   window.location.href = 'preview.html';
 });
 
-// 枚数変更・商品情報の修正・削除・トグル（リスト全体で1つのリスナー）
+// 枚数変更・商品情報の修正（リスト全体で1つのリスナー）
 queueListContainer.addEventListener('change', (e) => {
   const countInput = e.target.closest('.count-input');
   if (countInput) {
     const idx = Number(countInput.dataset.idx);
-    popQueue[idx].counts[countInput.dataset.field] = toCount(countInput.value);
+    const n = toCount(countInput.value);
+    popQueue[idx].counts[countInput.dataset.field] = n;
+    countInput.value = n;
+    countInput.classList.toggle('is-zero', n === 0);
     saveQueue();
+    renderQueueTotal();
     return;
   }
 
   const itemInput = e.target.closest('.item-input');
   if (itemInput) {
     updateItemField(Number(itemInput.dataset.idx), itemInput.dataset.key, itemInput.value);
-    return;
-  }
-
-  // 「JANを印字しない」
-  const check = e.target.closest('.item-check');
-  if (check) {
-    const idx = Number(check.dataset.idx);
-    const q = popQueue[idx];
-    if (!q) return;
-    q.item.noBarcode = check.checked;
-    if (q.source !== 'manual') q.edited = true;
-    saveQueue();
-    refreshCardState(idx);
   }
 });
 
@@ -362,29 +353,109 @@ queueListContainer.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || !e.target.closest('.item-input, .count-input')) return;
   e.preventDefault();
   e.target.blur();          // change イベントが先に発生して内容が保存される
-  if (!janInput.disabled) janInput.focus();
+  focusJan();
 });
 
-queueListContainer.addEventListener('click', async (e) => {
+// 枚数欄はクリックしたら中身を全選択（そのまま数字を打てるように）
+queueListContainer.addEventListener('focusin', (e) => {
+  if (e.target.classList.contains('count-input')) e.target.select();
+});
+
+queueListContainer.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   const idx = Number(btn.dataset.idx);
   switch (btn.dataset.action) {
-    case 'toggle-opt':
-      popQueue[idx].showOptions = !popQueue[idx].showOptions;
+    case 'toggle-sizes':
+      toggleAllOptions();
       break;
     case 'remove':
       popQueue.splice(idx, 1);
+      renderQueueList();
       break;
-    case 'reset':
-      if (!confirm('この商品の修正を取り消して、マスタの値に戻しますか？')) return;
-      await resetItemToMaster(idx);
+    case 'row-menu':
+      openRowMenu(idx, btn);
       break;
-    default:
-      return;
   }
-  renderQueueList();
 });
+
+// ============================================================
+// 行のメニュー（︙）：JANを印字しない・マスタの値に戻す
+// ============================================================
+const rowMenu = document.createElement('div');
+rowMenu.className = 'menu-panel row-menu hidden';
+rowMenu.setAttribute('role', 'menu');
+document.body.append(rowMenu);
+let rowMenuIdx = -1;
+let rowMenuButton = null;
+
+function rowMenuItems(q) {
+  const items = [];
+  if (q.item.jan) {
+    items.push({ action: 'toggle-barcode', label: 'JANを印字しない', checked: !!q.item.noBarcode });
+  }
+  if (q.edited && q.source !== 'manual' && q.item.jan) {
+    items.push({ action: 'reset', label: 'マスタの値に戻す' });
+  }
+  return items;
+}
+
+function openRowMenu(idx, button) {
+  if (rowMenuIdx === idx && !rowMenu.classList.contains('hidden')) {
+    closeRowMenu(true);
+    return;
+  }
+  const items = rowMenuItems(popQueue[idx]);
+  if (!items.length) return;
+  rowMenuIdx = idx;
+  rowMenuButton = button;
+  rowMenu.innerHTML = items.map(it => (
+    it.checked === undefined
+      ? `<button type="button" class="menu-item" role="menuitem" data-row-action="${it.action}">${it.label}</button>`
+      : `<button type="button" class="menu-item menu-item--check" role="menuitemcheckbox" aria-checked="${it.checked}" data-row-action="${it.action}">${it.label}</button>`
+  )).join('');
+  rowMenu.classList.remove('hidden');
+  button.setAttribute('aria-expanded', 'true');
+
+  // ボタンの左下に出す（右端からはみ出さないように右揃え）
+  const r = button.getBoundingClientRect();
+  rowMenu.style.top = `${r.bottom + window.scrollY + 4}px`;
+  rowMenu.style.left = `${Math.max(8, r.right + window.scrollX - rowMenu.offsetWidth)}px`;
+  rowMenu.querySelector('.menu-item')?.focus();
+}
+
+function closeRowMenu(restoreFocus = false) {
+  if (rowMenu.classList.contains('hidden')) return;
+  rowMenu.classList.add('hidden');
+  rowMenuButton?.setAttribute('aria-expanded', 'false');
+  rowMenuIdx = -1;
+  rowMenuButton = null;
+  if (restoreFocus) focusJan();
+}
+
+rowMenu.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-row-action]');
+  if (!btn) return;
+  const idx = rowMenuIdx;
+  const q = popQueue[idx];
+  closeRowMenu(true);
+  if (!q) return;
+  if (btn.dataset.rowAction === 'toggle-barcode') {
+    q.item.noBarcode = !q.item.noBarcode;
+    if (q.source !== 'manual') q.edited = true;
+    saveQueue();
+    refreshCardState(idx);
+  } else if (btn.dataset.rowAction === 'reset') {
+    if (!confirm('この商品の修正を取り消して、マスタの値に戻しますか？')) return;
+    await resetItemToMaster(idx);
+    renderQueueList();
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.row-menu, [data-action="row-menu"]')) closeRowMenu();
+});
+window.addEventListener('resize', () => closeRowMenu());
 
 /** 修正欄の内容を印刷キューに反映（リスト全体は描き直さず、入力中のフォーカスを保つ） */
 function updateItemField(idx, key, rawValue) {
@@ -438,28 +509,25 @@ async function resetItemToMaster(idx) {
   q.edited = false;
 }
 
-/** 修正後のカード表示（修正済みバッジ・JAN・価格欄）だけを更新 */
+/** 修正後の行の表示（状態アイコン・JAN・価格・税率）だけを更新（入力中のフォーカスを保つため描き直さない） */
 function refreshCardState(idx) {
-  const card = queueListContainer.querySelector(`.queue-card[data-idx="${idx}"]`);
-  if (!card) return;
+  const row = queueListContainer.querySelector(`.queue-row[data-idx="${idx}"]`);
+  if (!row) return;
   const q = popQueue[idx];
-  card.className = cardClassName(q);
+  row.className = rowClassName(q);
 
-  const chip = card.querySelector('.jan-chip');
-  if (chip) chip.outerHTML = janChipHtml(q.item);
-  const check = card.querySelector('.item-check');
-  if (check) check.checked = !!q.item.noBarcode;
-
-  const janField = card.querySelector('.item-input[data-key="jan"]');
+  row.querySelector('.q-icons--line2').innerHTML = editedIconHtml(q);
+  const jan = row.querySelector('.jan-text');
+  if (jan) jan.outerHTML = janTextHtml(q.item);
+  const janField = row.querySelector('.item-input[data-key="jan"]');
   if (janField) janField.value = q.item.jan;
-  const exclInput = card.querySelector('.item-input[data-key="priceExcl"]');
-  if (exclInput) exclInput.value = q.item.priceExcl;
-  const priceInput = card.querySelector('.item-input[data-key="price"]');
-  if (priceInput) {
-    priceInput.value = q.item.price;
-    const label = priceInput.parentElement.querySelector('.item-field__label');
-    if (label) label.textContent = `税込価格${fieldNote({ key: 'price', price: true }, q.item)}`;
-  }
+  const excl = row.querySelector('.item-input[data-key="priceExcl"]');
+  if (excl) excl.value = q.item.priceExcl;
+  const incl = row.querySelector('.item-input[data-key="price"]');
+  if (incl) incl.value = q.item.price;
+  const rate = row.querySelector('.tax-text');
+  if (rate) rate.textContent = taxRateText(q.item);
+  row.querySelector('[data-action="row-menu"]')?.classList.toggle('is-hidden', !rowMenuItems(q).length);
 }
 
 // ============================================================
@@ -469,19 +537,20 @@ let noticeTimer = null;
 let noticeAction = null;
 
 /**
- * 通知を出す。action（{ label, run }）を渡すと通知にボタンを付ける（押せるよう長めに表示する）
+ * 通知を画面左下に出す。action（{ label, run }）を渡すと通知にボタンを付ける（押せるよう長めに表示する）
+ * リストの上ではなく画面に重ねて出すので、スキャンのたびにリストがずれない。
  */
-function showScanNotice(text, isError = false, sub = 'リスト先頭に追加しました', action = null) {
+function showScanNotice(text, isError = false, sub = '', action = null) {
   scanNoticeText.textContent = text;
   scanNoticeSub.textContent = isError ? '' : sub;
-  scanNotice.className = `notice ${isError ? 'notice--error' : 'notice--success'}`;
+  scanNotice.className = `toast${isError ? ' toast--error' : ''}`;
 
   noticeAction = action ? action.run : null;
   scanNoticeAction.textContent = action ? action.label : '';
   scanNoticeAction.classList.toggle('hidden', !action);
 
   clearTimeout(noticeTimer);
-  const ms = action ? 8000 : (isError ? 4000 : 2500);
+  const ms = action ? 8000 : (isError ? 5000 : 2500);
   noticeTimer = setTimeout(() => scanNotice.classList.add('hidden'), ms);
 }
 
@@ -526,7 +595,8 @@ function addItemToQueue(item) {
     q.source !== 'manual' && !q.item.noBarcode && q.item.jan === item.jan
   ));
 
-  if (existingIdx >= 0) {
+  const isNew = existingIdx < 0;
+  if (!isNew) {
     const target = popQueue.splice(existingIdx, 1)[0];
     target.counts[DEFAULT_SIZE_KEY] += 1;
     popQueue.unshift(target);
@@ -539,6 +609,17 @@ function addItemToQueue(item) {
   }
 
   renderQueueList();
+  flashCard(0);
+  return isNew;
+}
+
+/** 追加・枚数加算した行を一瞬強調する */
+function flashCard(idx) {
+  const card = queueListContainer.querySelector(`.queue-row[data-idx="${idx}"]`);
+  if (!card) return;
+  card.classList.remove('is-flash');
+  void card.offsetWidth;   // 連続スキャンでもアニメーションをやり直すため
+  card.classList.add('is-flash');
 }
 
 /** 空の手入力の行をリストの先頭に追加し、商品名の欄にフォーカスする */
@@ -561,140 +642,210 @@ function addManualItem(jan = '') {
     source: 'manual'
   });
   renderQueueList();
-  queueListContainer.querySelector('.queue-card[data-idx="0"] .item-input[data-key="name"]')?.focus();
+  flashCard(0);
+  queueListContainer.querySelector('.queue-row[data-idx="0"] .item-input[data-key="name"]')?.focus();
   showScanNotice('手入力の行を追加しました', false, '商品名と価格を入力してください');
 }
 
-/** 修正欄の見出しの補足（税込価格には税率を示す） */
-function fieldNote(f, item) {
-  if (!f.price) return '';
-  if (f.key !== 'price') return '（円）';
-  const rate = item.taxRate ?? null;
-  return rate === null ? '（円・税率なし）' : `（円・${rate}%）`;
+// ---- アイコン（絵文字は環境で形が変わるため SVG） ----
+const svg = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const TRASH_ICON = svg('<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/>');
+const DOTS_ICON = svg('<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>');
+const ICON_CSV = svg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 13h8M8 17h8"/>');
+const ICON_MANUAL = svg('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>');
+const ICON_EDITED = svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>');
+
+/** 1段目：取り込み元（CSV・手入力）、2段目：修正済み */
+function sourceIconHtml(q) {
+  if (q.source === 'csv') return `<span class="q-icon" title="CSVから読み込み" aria-label="CSVから読み込み" role="img">${ICON_CSV}</span>`;
+  if (q.source === 'manual') return `<span class="q-icon" title="手入力" aria-label="手入力" role="img">${ICON_MANUAL}</span>`;
+  return '';
+}
+function editedIconHtml(q) {
+  return q.edited ? `<span class="q-icon q-icon--edited" title="修正済み" aria-label="修正済み" role="img">${ICON_EDITED}</span>` : '';
 }
 
-/** 商品情報の修正欄 */
-function itemFieldHtml(f, item, idx) {
-  if (f.key === 'taxRate') return taxRateFieldHtml(f, item, idx);
-  const value = item[f.key] ?? '';
-  const inputAttrs = f.price
-    ? `type="number" min="0" step="1" inputmode="numeric"`
-    : `type="text"${f.numeric ? ' inputmode="numeric"' : ''}${f.placeholder ? ` placeholder="${escapeHtml(f.placeholder)}"` : ''}`;
-  return `
-    <label class="item-field item-field--span${f.span}">
-      <span class="item-field__label">${f.label}${escapeHtml(fieldNote(f, item))}</span>
-      <input ${inputAttrs} class="item-input${f.price ? ' item-input--price' : ''}${f.key === 'price' ? ' item-input--incl' : ''}"
-        data-idx="${idx}" data-key="${f.key}" value="${escapeHtml(value)}" autocomplete="off">
-    </label>`;
-}
-
-/** 税率の選択欄（手入力の行だけ） */
-function taxRateFieldHtml(f, item, idx) {
-  const current = item.taxRate == null ? '' : String(item.taxRate);
-  const options = TAX_RATE_OPTIONS.map(o => (
-    `<option value="${o.value}"${String(o.value) === current ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
-  )).join('');
-  return `
-    <label class="item-field item-field--span${f.span}">
-      <span class="item-field__label">${f.label}</span>
-      <select class="item-input item-input--select" data-idx="${idx}" data-key="taxRate">${options}</select>
-    </label>`;
-}
-
-/** カードのクラス（修正済み・手入力・マスタに戻せない・JAN あり） */
-function cardClassName(q) {
-  const classes = ['queue-card'];
+/** 行のクラス（修正済み・手入力・JAN あり） */
+function rowClassName(q) {
+  const classes = ['queue-row'];
   if (q.edited) classes.push('is-edited');
   if (q.source === 'manual') classes.push('is-manual');
-  if (q.source === 'manual' || !q.item.jan) classes.push('no-master');
   if (q.item.jan) classes.push('has-jan');
   return classes.join(' ');
 }
 
-/** カード見出しの JAN 表示 */
-function janChipHtml(item) {
-  if (!item.jan) return '<span class="jan-chip jan-chip--none">JANなし</span>';
-  const off = item.noBarcode ? ' jan-chip--off' : '';
-  return `<span class="jan-chip${off}">${escapeHtml(item.jan)}</span>`;
+/** JAN の表示（「JANを印字しない」は取り消し線） */
+function janTextHtml(item) {
+  if (!item.jan) return '<span class="jan-text jan-text--none">JANなし</span>';
+  const off = item.noBarcode ? ' jan-text--off' : '';
+  const title = item.noBarcode ? ' title="JANを印字しない"' : '';
+  return `<span class="jan-text${off}"${title}>${escapeHtml(item.jan)}</span>`;
 }
 
-/** 主要サイズの枚数欄（常時表示） */
-function primaryFieldHtml(conf, q, idx) {
-  const highlight = conf.key === DEFAULT_SIZE_KEY ? ' count-input--main' : '';
+function taxRateText(item) {
+  return item.taxRate == null ? '税率なし' : `${item.taxRate}%`;
+}
+
+/** 入力欄1つ。列名をプレースホルダー（薄いグレー）と読み上げ用の名前に使う */
+function inputHtml(q, idx, key, label, cls = '') {
+  const price = key === 'priceExcl' || key === 'price';
+  const attrs = price ? 'type="number" min="0" step="1" inputmode="numeric"'
+    : `type="text"${key === 'jan' ? ' inputmode="numeric"' : ''}`;
+  let value = q.item[key] ?? '';
+  // 手入力の行で価格が未入力（0）のときは空欄にして、プレースホルダーを見せる
+  if (price && q.source === 'manual' && !value) value = '';
+  return `<input ${attrs} class="item-input${price ? ' item-input--price' : ''}${cls}" placeholder="${label}" aria-label="${label}"
+    data-idx="${idx}" data-key="${key}" value="${escapeHtml(value)}" autocomplete="off">`;
+}
+
+/** 税率の選択欄（手入力の行だけ） */
+function taxSelectHtml(q, idx) {
+  const current = q.item.taxRate == null ? '' : String(q.item.taxRate);
+  const options = TAX_RATE_OPTIONS.map(o => (
+    `<option value="${o.value}"${String(o.value) === current ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
+  )).join('');
+  return `<select class="item-input item-input--select" aria-label="税率" data-idx="${idx}" data-key="taxRate">${options}</select>`;
+}
+
+/** ミックスマッチ（CSV で指定したときだけ）。税抜・税込の右に同じ2段で出す */
+function mixHtml(item) {
+  const mix = item.mix;
+  if (!mix) return ['<div class="q-cell"></div>', '<div class="q-cell"></div>'];
+  return [
+    `<div class="q-cell q-mix" title="ミックスマッチ：${mix.qty}個 税抜${mix.priceExcl}円（税込${mix.price}円）"><span class="q-mix__qty">${mix.qty}個</span>${mix.priceExcl.toLocaleString()}</div>`,
+    `<div class="q-cell q-mix q-mix--incl">${mix.price.toLocaleString()}</div>`
+  ];
+}
+
+/** 表示する枚数列（主要サイズ＋「1枚以上の行がある」か「＋で開いた」その他のサイズ） */
+function visibleSizes() {
+  return SIZE_LIST.filter(c => c.primary || globalOptionsVisible
+    || popQueue.some(q => toCount(q.counts[c.key]) > 0));
+}
+
+/** 列の幅（CSS の grid-template-columns）。ミックスマッチ列は使う行があるときだけ */
+function gridColumns(sizes, hasMix) {
+  return [
+    'var(--q-col-icon)', 'minmax(var(--q-col-item-min), 1fr)', 'var(--q-col-qty)', 'var(--q-col-risk)',
+    'var(--q-col-price)', hasMix ? 'var(--q-col-mix)' : '0', `repeat(${sizes.length}, var(--q-col-count))`, 'var(--q-col-act)'
+  ].join(' ');
+}
+
+function headerHtml(sizes, hasHidden, hasMix) {
+  const allOptionalForced = !globalOptionsVisible && !hasHidden;
+  const toggle = allOptionalForced ? '' : `
+    <button type="button" class="q-size-toggle" data-action="toggle-sizes"
+      aria-label="${globalOptionsVisible ? '使っていないサイズの列を隠す' : 'ほかのサイズの列を表示'}"
+      title="${globalOptionsVisible ? '使っていないサイズの列を隠す' : 'ほかのサイズの列を表示'}">${globalOptionsVisible ? '−' : '＋'}</button>`;
   return `
-    <div class="count-field">
-      <label>${conf.label}</label>
-      <input type="number" min="0" value="${q.counts[conf.key]}" data-idx="${idx}" data-field="${conf.key}" class="count-input${highlight}">
+    <div class="queue-head" role="row">
+      <span></span>
+      <span>商品名 ／ JAN・メーカー・コメント</span>
+      <span>数量</span>
+      <span>区分 ／ 税率</span>
+      <span class="q-num">税抜 ／ 税込</span>
+      <span class="q-num q-mix-head">${hasMix ? 'ミックスマッチ' : ''}</span>
+      ${sizes.map(c => `<span class="q-count-head${c.key === DEFAULT_SIZE_KEY ? ' is-main' : ''}" title="${escapeHtml(c.label)}">${escapeHtml(shortSizeLabel(c))}</span>`).join('')}
+      <span class="q-act-head">${toggle}</span>
     </div>`;
 }
 
-/** オプションサイズの枚数欄（「⚙️ 他サイズ」内） */
-function optionFieldHtml(conf, q, idx) {
+/** 列見出し用の短い名前（「A9タテ」→「A9」、「A6ハーフ」→「A6H」） */
+function shortSizeLabel(c) {
+  return String(c.label).replace('ハーフ', 'H').replace(/タテ|ヨコ/g, '');
+}
+
+function rowHtml(q, idx, sizes) {
+  const manual = q.source === 'manual';
+  const [mix1, mix2] = mixHtml(q.item);
+  const hasMenu = rowMenuItems(q).length > 0;
+  const counts = sizes.map(c => {
+    const n = toCount(q.counts[c.key]);
+    const cls = `count-input${c.key === DEFAULT_SIZE_KEY ? ' count-input--main' : ''}${n === 0 ? ' is-zero' : ''}`;
+    return `<div class="q-count"><input type="number" min="0" inputmode="numeric" class="${cls}" value="${n}"
+      data-idx="${idx}" data-field="${c.key}" aria-label="${escapeHtml(c.label)}の枚数"></div>`;
+  }).join('');
+  const themeTag = q.item.themeId ? `<span class="q-tag" title="デザインID">${escapeHtml(q.item.themeId)}</span>` : '';
+
   return `
-    <div class="option-field">
-      <span>${conf.label}:</span>
-      <input type="number" min="0" value="${q.counts[conf.key]}" data-idx="${idx}" data-field="${conf.key}" class="count-input count-input--small">
+    <div class="${rowClassName(q)}" data-idx="${idx}" role="row">
+      <div class="q-icons">${sourceIconHtml(q)}</div>
+      <div class="q-cell">${inputHtml(q, idx, 'name', '商品名', ' item-input--name')}</div>
+      <div class="q-cell">${inputHtml(q, idx, 'qty1', '数量1')}</div>
+      <div class="q-cell">${inputHtml(q, idx, 'risk', '医薬品区分')}</div>
+      <div class="q-cell">${inputHtml(q, idx, 'priceExcl', '税抜')}</div>
+      ${mix1}
+      ${counts}
+      <div class="q-act"><button type="button" class="btn-row" data-action="remove" data-idx="${idx}" aria-label="この行を削除" title="この行を削除">${TRASH_ICON}</button></div>
+
+      <div class="q-icons q-icons--line2">${editedIconHtml(q)}</div>
+      <div class="q-cell q-detail">
+        ${manual ? inputHtml(q, idx, 'jan', 'JAN', ' item-input--jan') : janTextHtml(q.item)}
+        ${inputHtml(q, idx, 'maker', 'メーカー', ' item-input--maker')}
+        ${inputHtml(q, idx, 'comment', 'コメント', ' item-input--comment')}
+        ${themeTag}
+      </div>
+      <div class="q-cell">${inputHtml(q, idx, 'qty2', '数量2')}</div>
+      <div class="q-cell">${manual ? taxSelectHtml(q, idx) : `<span class="tax-text">${taxRateText(q.item)}</span>`}</div>
+      <div class="q-cell">${inputHtml(q, idx, 'price', '税込', ' item-input--incl')}</div>
+      ${mix2}
+      <div class="q-act"><button type="button" class="btn-row${hasMenu ? '' : ' is-hidden'}" data-action="row-menu" data-idx="${idx}"
+        aria-label="この行のメニュー" title="JANを印字しない・マスタの値に戻す" aria-haspopup="true" aria-expanded="false">${DOTS_ICON}</button></div>
     </div>`;
+}
+
+function footerHtml(sizes) {
+  return `
+    <div class="queue-foot" role="row">
+      <span></span><span>サイズ別の合計</span><span></span><span></span><span></span><span></span>
+      ${sizes.map(c => `<span class="q-count-total" data-size="${c.key}"></span>`).join('')}
+      <span></span>
+    </div>`;
+}
+
+/** 画面下の「合計◯枚」と、表の最下行のサイズ別合計 */
+function renderQueueTotal() {
+  let total = 0;
+  const bySize = {};
+  for (const q of popQueue) {
+    for (const [key, n] of Object.entries(q.counts)) {
+      const c = toCount(n);
+      total += c;
+      bySize[key] = (bySize[key] || 0) + c;
+    }
+  }
+  queueTotal.innerHTML = popQueue.length ? `合計 <strong>${total.toLocaleString()}</strong> 枚` : '';
+  queueListContainer.querySelectorAll('.q-count-total').forEach(el => {
+    const n = bySize[el.dataset.size] || 0;
+    el.textContent = n.toLocaleString();
+    el.classList.toggle('is-zero', n === 0);
+  });
 }
 
 function renderQueueList() {
+  closeRowMenu();
   saveQueue();
   queueCount.textContent = `${popQueue.length}件`;
+  clearQueueBtn.disabled = popQueue.length === 0;   // 空のときは押せないようにする
 
   if (popQueue.length === 0) {
+    queueListContainer.className = 'queue-list';
     queueListContainer.replaceChildren(emptyQueueMessage);
+    renderQueueTotal();
     return;
   }
 
-  queueListContainer.innerHTML = popQueue.map((q, idx) => `
-      <div class="${cardClassName(q)}" data-idx="${idx}">
-        <div class="queue-card__head">
-          <div class="queue-card__meta">
-            ${janChipHtml(q.item)}
-            <label class="nobarcode-toggle">
-              <input type="checkbox" class="item-check" data-idx="${idx}"${q.item.noBarcode ? ' checked' : ''}>
-              JANを印字しない
-            </label>
-            <span class="edited-badge">✏️ 修正済み</span>
-            ${cardInfoChips(q)}
-          </div>
-          <div class="card-actions">
-            <button type="button" data-action="reset" data-idx="${idx}" class="btn-reset">↺ マスタの値に戻す</button>
-            <button type="button" data-action="toggle-opt" data-idx="${idx}" class="btn-chip">
-              <span>⚙️ 他サイズ</span>
-              <span class="btn-chip__arrow">${q.showOptions ? '▲' : '▼'}</span>
-            </button>
-            <button type="button" data-action="remove" data-idx="${idx}" class="btn-icon-danger" aria-label="この行を削除">🗑️</button>
-          </div>
-        </div>
-
-        <div class="queue-card__body">
-          <div class="item-form">
-            ${(q.source === 'manual' ? MANUAL_FIELDS : EDIT_FIELDS).map(f => itemFieldHtml(f, q.item, idx)).join('')}
-          </div>
-          <div class="count-group">
-            ${PRIMARY_SIZES.map(c => primaryFieldHtml(c, q, idx)).join('')}
-          </div>
-        </div>
-
-        <div class="option-sizes${q.showOptions ? '' : ' hidden'}">
-          <div class="option-sizes__title">【オプションサイズ指定】</div>
-          <div class="option-sizes__fields">
-            ${OPTION_SIZES.map(c => optionFieldHtml(c, q, idx)).join('')}
-          </div>
-        </div>
-      </div>`).join('');
-}
-
-/** カード見出しの補足（手入力・CSV から読み込んだ行・ミックスマッチ・デザインID） */
-function cardInfoChips(q) {
-  const chips = [];
-  if (q.source === 'manual') chips.push('✏️ 手入力');
-  if (q.source === 'csv') chips.push('📄 CSV');
-  const mix = q.item.mix;
-  if (mix) chips.push(`${mix.qty}個 税抜${mix.priceExcl.toLocaleString()}円（税込${mix.price.toLocaleString()}円）`);
-  if (q.item.themeId) chips.push(`デザイン: ${q.item.themeId}`);
-  return chips.map(t => `<span class="info-chip">${escapeHtml(t)}</span>`).join('');
+  const sizes = visibleSizes();
+  const hasHidden = sizes.length < SIZE_LIST.length;
+  const hasMix = popQueue.some(q => q.item.mix);
+  queueListContainer.className = `queue-list queue-table${hasMix ? ' has-mix' : ''}`;
+  queueListContainer.style.setProperty('--q-cols', gridColumns(sizes, hasMix));
+  queueListContainer.innerHTML = `<div class="queue-table__inner" role="table" aria-label="印刷待機リスト">
+    ${headerHtml(sizes, hasHidden, hasMix)}
+    ${popQueue.map((q, idx) => rowHtml(q, idx, sizes)).join('')}
+    ${footerHtml(sizes)}
+  </div>`;
+  renderQueueTotal();
 }
 
 // ============================================================
@@ -706,6 +857,8 @@ let pendingCsvEntries = null;
 csvImportBtn.addEventListener('click', () => csvFileInput.click());
 
 csvTemplateBtn.addEventListener('click', () => {
+  closeMenu();
+  focusJan();
   const blob = new Blob([buildTemplateCsv()], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -787,8 +940,77 @@ csvApplyBtn.addEventListener('click', () => {
 csvCancelBtn.addEventListener('click', hideCsvResult);
 
 // ============================================================
+// メニュー（右上のハンバーガー）
+// スキャナーはフォーカスのある欄に入力するので、メニューを閉じたら JAN 欄に戻す
+// ============================================================
+function openMenu() {
+  appMenu.classList.remove('hidden');
+  menuBtn.setAttribute('aria-expanded', 'true');
+  appMenu.querySelector('.menu-item')?.focus();
+}
+
+function closeMenu() {
+  appMenu.classList.add('hidden');
+  menuBtn.setAttribute('aria-expanded', 'false');
+}
+
+function isMenuOpen() {
+  return !appMenu.classList.contains('hidden');
+}
+
+function focusJan() {
+  if (!janInput.disabled) janInput.focus();
+}
+
+menuBtn.addEventListener('click', () => {
+  if (isMenuOpen()) {
+    closeMenu();
+    focusJan();
+  } else {
+    openMenu();
+  }
+});
+
+// メニューの外をクリックしたら閉じる（クリックした欄のフォーカスは奪わない）
+document.addEventListener('click', (e) => {
+  if (isMenuOpen() && !e.target.closest('.menu')) closeMenu();
+});
+
+// Esc で閉じる・上下キーで項目を移動
+function menuArrowKeys(menu) {
+  return (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const items = [...menu.querySelectorAll('.menu-item:not(:disabled)')];
+    const pos = items.indexOf(document.activeElement);
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    items[(pos + step + items.length) % items.length]?.focus();
+  };
+}
+rowMenu.addEventListener('keydown', menuArrowKeys(rowMenu));
+appMenu.addEventListener('keydown', (e) => {
+  const items = [...appMenu.querySelectorAll('.menu-item:not(:disabled)')];
+  const pos = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    items[(pos + step + items.length) % items.length]?.focus();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!rowMenu.classList.contains('hidden')) {
+    closeRowMenu(true);
+  } else if (isMenuOpen()) {
+    closeMenu();
+    focusJan();
+  }
+});
+
+// ============================================================
 // 初期化（type="module" は DOM 構築後に実行されるので DOMContentLoaded 不要）
 // ============================================================
+setStatus('loading', 'マスタ読み込み中…');
 renderStoreInput();
 restoreQueue();
 renderQueueList();

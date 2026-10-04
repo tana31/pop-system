@@ -1,7 +1,8 @@
 /**
  * 商品マスタの列定義と、マスタの行 →「商品データ」への変換（★列名はこのファイルだけで管理する★）
  *
- * 使うのはマスタWorker（master-worker.js）だけ。
+ * 列定義と行の変換を使うのはマスタWorker（master-worker.js）だけ。CSV 読み込み（csv-import.js）と
+ * スキャン画面（scan-app.js、手入力の JAN）は normalizeJan などの正規化だけを使う。
  * 画面側（スキャン画面・プレビュー画面）は列名を知らず、変換済みの商品データだけを扱う。
  *
  * マスタは軽量化バッチ（pop-master-batch.ps1）が作る次の形の CSV で、/api/master が
