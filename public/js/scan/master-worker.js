@@ -1,7 +1,8 @@
 /**
  * 商品マスタ専用 Web Worker（モジュールWorker）
  *  - マスタの取得・索引作成・検索をすべてここで行う（画面は固まらない）
- *  - 取得したマスタは IndexedDB に保存し、次回以降は即座に利用
+ *  - サーバー（/api/master）からは CSV がそのまま届くので、解析もここで行う
+ *  - 解析したマスタは IndexedDB に保存し、次回以降は即座に利用
  *  - 裏でサーバーにバージョン確認し、変わっていれば自動で差し替え
  *  - 列名の解決はここで完結し、画面には変換済みの「商品データ」だけを渡す
  *  - 価格は「指定された店舗の例外価格（P 行）があればそれ、無ければ標準価格（I 行）」
@@ -22,6 +23,7 @@
  *   error     … キャッシュも無く、取得にも失敗
  */
 import { normalizeJan, normalizeStore, createRowReader, findMissingRequired, COLUMNS, ROW_TYPE } from './master-schema.js';
+import { parseCsv } from '../shared/csv.js';
 
 const API_URL = '/api/master';
 const DB_NAME = 'pop-master-cache';
@@ -95,11 +97,13 @@ async function init() {
       postStatus('synced');
       return;
     }
+    if (res.status === 401) throw new Error('ログインの有効期限が切れました。画面を再読み込みしてください');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     if (!cached) postStatus('loading', { message: 'マスタを解析中...' });
 
-    const data = await res.json();
+    // ETag はサーバーが付けたバージョン。次回の確認（If-None-Match）にそのまま使う
+    const data = { version: res.headers.get('ETag') || '', ...parseCsv(await res.text()) };
     if (!isValidMaster(data)) {
       const missing = Array.isArray(data?.headers) ? findMissingRequired(data.headers) : [];
       missing.forEach(key => {
@@ -208,7 +212,7 @@ function search(keyword, limit, store) {
 }
 
 // ------------------------------------------------------------
-// IndexedDB ヘルパー（サーバー応答 {version, headers, rows} をそのまま保存）
+// IndexedDB ヘルパー（解析結果 {version, headers, rows} を保存）
 // ------------------------------------------------------------
 function openDb() {
   return new Promise((resolve, reject) => {
