@@ -53,6 +53,9 @@
           <span id="queueCount" class="count-badge">0件</span>
         </h2>
         <div class="toolbar">
+          <button type="button" id="csvImportBtn" class="btn-secondary" disabled>📄 CSVから読み込み</button>
+          <button type="button" id="csvTemplateBtn" class="link-plain">テンプレート</button>
+          <input type="file" id="csvFileInput" accept=".csv,text/csv" hidden>
           <button type="button" id="toggleAllOptionsBtn" class="btn-secondary">⚙️ 全行のオプションサイズ表示切替</button>
           <button type="button" id="clearQueueBtn" class="link-danger">リストを全クリア</button>
         </div>
@@ -62,6 +65,16 @@
       <div id="scanNotice" class="notice notice--success hidden">
         <span id="scanNoticeText"></span>
         <span id="scanNoticeSub" class="notice__sub">リスト先頭に追加しました</span>
+      </div>
+
+      <!-- CSV 読み込み結果（確認してから置き換える） -->
+      <div id="csvResult" class="csv-result hidden">
+        <p id="csvResultSummary" class="csv-result__summary"></p>
+        <ul id="csvResultList" class="csv-result__list"></ul>
+        <div class="csv-result__actions">
+          <button type="button" id="csvApplyBtn" class="btn-secondary btn-secondary--primary">置き換える</button>
+          <button type="button" id="csvCancelBtn" class="btn-secondary">キャンセル</button>
+        </div>
       </div>
 
       <div id="queueListContainer" class="queue-list">

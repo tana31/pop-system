@@ -1,6 +1,7 @@
 /**
  * POPセル（1枚分）のDOM生成
- * item はマスタWorkerが変換済みの商品データ（形は js/scan/master-schema.js 冒頭を参照）
+ * item はマスタWorkerが変換済みの商品データ（形は js/scan/master-schema.js 冒頭を参照）。
+ * CSV から読み込んだ商品は mix（ミックスマッチ）と themeId を持つことがある（js/scan/csv-import.js 冒頭）
  */
 import { applyThemeColors, themeImageUrls } from './themes.js';
 import { createBarcodeElement } from './barcode.js';
@@ -22,14 +23,7 @@ export function createPopCell(conf, item, theme) {
         <span class="pop-qty">${escapeHtml(item.qty1)}</span>
         <span class="pop-qty">${escapeHtml(item.qty2)}</span>
       </div>
-      <div class="pop-tax-excl-container">
-        <span class="pop-tax-badge-black">税抜</span>
-        <div class="pop-price-excl">
-          ${item.priceExcl.toLocaleString()}<span class="unit">円</span>
-        </div>
-      </div>
-      <div class="pop-divider"></div>
-      <div class="pop-tax-incl">(税込) ${item.price.toLocaleString()}<span class="unit">円</span></div>
+      ${item.mix && conf.mixMatch ? mixPriceHtml(item) : normalPriceHtml(item)}
     </div>
   `;
 
@@ -46,6 +40,52 @@ export function createPopCell(conf, item, theme) {
   if (image) cell.prepend(createImageContainer(image.src, image.fallback));
 
   return cell;
+}
+
+/** 通常の価格（税抜を大きく、その下に税込） */
+function normalPriceHtml(item) {
+  return `
+      <div class="pop-tax-excl-container">
+        <span class="pop-tax-badge-black">税抜</span>
+        <div class="pop-price-excl">
+          ${yen(item.priceExcl)}<span class="unit">円</span>
+        </div>
+      </div>
+      <div class="pop-divider"></div>
+      <div class="pop-tax-incl">(税込) ${yen(item.price)}<span class="unit">円</span></div>`;
+}
+
+/**
+ * ミックスマッチの価格。左に「1個」の価格を小さく、右に「◯個」の価格を通常の価格と同じ大きさで並べる。
+ * 右側は通常の価格と同じ部品（クラス）なので、fitPopText による文字の縮小もそのまま効く
+ */
+function mixPriceHtml(item) {
+  const mix = item.mix;
+  return `
+      <div class="pop-mix">
+        <div class="pop-mix-single">
+          <div class="pop-mix-single__qty">1個</div>
+          <div class="pop-mix-single__excl">税抜 ${yen(item.priceExcl)}円</div>
+          <div class="pop-mix-single__incl">(税込${yen(item.price)}円)</div>
+        </div>
+        <div class="pop-mix-main">
+          <div class="pop-tax-excl-container">
+            <span class="pop-mix-label">
+              <span class="pop-mix-qty">${escapeHtml(mix.qty)}個</span>
+              <span class="pop-tax-badge-black">税抜</span>
+            </span>
+            <div class="pop-price-excl">
+              ${yen(mix.priceExcl)}<span class="unit">円</span>
+            </div>
+          </div>
+          <div class="pop-divider"></div>
+          <div class="pop-tax-incl">(税込) ${yen(mix.price)}<span class="unit">円</span></div>
+        </div>
+      </div>`;
+}
+
+function yen(value) {
+  return (Number(value) || 0).toLocaleString();
 }
 
 /**

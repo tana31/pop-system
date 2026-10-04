@@ -52,13 +52,20 @@ function currentTheme() {
   return themes.find(t => String(t.id) === themeSelect.value) || themes[0] || {};
 }
 
+/** 商品ごとのデザイン：CSV でデザインIDが指定されていればそれ、無ければ（または未登録なら）画面で選んだもの */
+function themeResolver() {
+  const selected = currentTheme();
+  const byId = new Map(themes.map(t => [String(t.id), t]));
+  return (item) => (item.themeId && byId.get(String(item.themeId))) || selected;
+}
+
 function render() {
   const pages = modeSelect.value === 'mixed'
     ? buildMixedPages(queue, SIZE_CONFIGS, MIXED_GRID)
     : buildSeparatedPages(queue, SIZE_CONFIGS);
 
-  const theme = currentTheme();
-  renderArea.replaceChildren(...pages.map(p => renderPage(p, theme)));
+  const getTheme = themeResolver();
+  renderArea.replaceChildren(...pages.map(p => renderPage(p, getTheme)));
   fitPopText(renderArea);
 
   // テーマ取得エラーの表示中は上書きしない

@@ -274,6 +274,48 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
 }
 .link-danger:hover { text-decoration: underline; }
 
+/* CSV 読み込み */
+.link-plain {
+  padding: 0;
+  font-size: .75rem;
+  color: var(--c-slate-700);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+}
+.btn-secondary--primary { color: #fff; background: var(--c-indigo-600); border-color: var(--c-indigo-600); }
+.btn-secondary--primary:hover { background: var(--c-indigo-700, #4338ca); }
+.btn-secondary:disabled { opacity: .5; cursor: not-allowed; }
+.csv-result {
+  margin-bottom: .75rem;
+  padding: .75rem 1rem;
+  font-size: .875rem;
+  background: #eef2ff;
+  border: 1px solid var(--c-indigo-300);
+  border-radius: var(--radius);
+}
+.csv-result__summary { margin: 0 0 .5rem; font-weight: 700; }
+.csv-result__list {
+  max-height: 12rem;
+  margin: 0 0 .75rem;
+  padding-left: 1.25rem;
+  overflow-y: auto;
+  font-size: .75rem;
+}
+.csv-result__list:empty { display: none; }
+.csv-result__actions { display: flex; gap: .5rem; }
+.toolbar, .queue-card__meta { flex-wrap: wrap; }
+.info-chip {
+  padding: .125rem .5rem;
+  font-size: .6875rem;
+  font-weight: 700;
+  color: var(--c-slate-700);
+  background: var(--c-slate-100);
+  border: 1px solid var(--c-slate-300);
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
 /* スキャン通知 */
 .notice {
   display: flex;

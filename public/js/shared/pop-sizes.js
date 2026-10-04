@@ -10,6 +10,7 @@
  * mixed:   混載モード（A4ヨコ 8列×4行グリッド）で占有するマス数
  *          1マス = 幅 37.125mm × 高さ 52.5mm（＝A9タテ1枚分）
  *          rotate: true の場合、POPを90°回転させて配置（A5ヨコ用）
+ * mixMatch: true ならミックスマッチ（◯個の価格）を表示する。false のサイズは通常の価格だけ
  */
 
 // スキャン・検索で追加したときに 1枚 を入れるサイズ（同じJANの再スキャンでもこのサイズが +1）
@@ -33,7 +34,8 @@ export const SIZE_CONFIGS = {
     isVertical: true,       // 縦長デザイン（上部画像）
     blocks: 1,
     mixed: { w: 1, h: 1 },  // 37.125mm × 52.5mm
-    cssClass: 'pop-size-a9'
+    cssClass: 'pop-size-a9',
+    mixMatch: false         // 幅が狭いので表示しない
   },
   a8: {
     key: 'a8',
@@ -45,7 +47,8 @@ export const SIZE_CONFIGS = {
     isVertical: false,      // 横長デザイン（左側画像）
     blocks: 2,
     mixed: { w: 2, h: 1 },  // 74.25mm × 52.5mm
-    cssClass: 'pop-size-a8'
+    cssClass: 'pop-size-a8',
+    mixMatch: true
   },
   a6half: {
     key: 'a6half',
@@ -57,7 +60,8 @@ export const SIZE_CONFIGS = {
     isVertical: false,
     blocks: 4,
     mixed: { w: 4, h: 1 },  // 148.5mm × 52.5mm
-    cssClass: 'pop-size-a6half'
+    cssClass: 'pop-size-a6half',
+    mixMatch: true
   },
   a6: {
     key: 'a6',
@@ -69,7 +73,8 @@ export const SIZE_CONFIGS = {
     isVertical: false,
     blocks: 8,
     mixed: { w: 4, h: 2 },  // 148.5mm × 105mm
-    cssClass: 'pop-size-a6'
+    cssClass: 'pop-size-a6',
+    mixMatch: true
   },
   a5: {
     key: 'a5',
@@ -81,7 +86,8 @@ export const SIZE_CONFIGS = {
     isVertical: false,
     blocks: 16,
     mixed: { w: 4, h: 4, rotate: true }, // 148.5mm × 210mm の枠に90°回転して配置
-    cssClass: 'pop-size-a5'
+    cssClass: 'pop-size-a5',
+    mixMatch: true
   },
   a4: {
     key: 'a4',
@@ -93,7 +99,8 @@ export const SIZE_CONFIGS = {
     isVertical: false,
     blocks: 32,
     mixed: { w: 8, h: 4 },  // 297mm × 210mm
-    cssClass: 'pop-size-a4'
+    cssClass: 'pop-size-a4',
+    mixMatch: true
   }
 };
 

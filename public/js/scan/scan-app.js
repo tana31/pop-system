@@ -13,6 +13,7 @@
 import { SIZE_CONFIGS, DEFAULT_SIZE_KEY, createDefaultCounts } from '../shared/pop-sizes.js';
 import { calcPriceIncl } from '../shared/price.js';
 import { loadQueue, saveQueue as storeQueue, toCount } from '../shared/print-queue.js';
+import { importProductCsv, decodeCsvFile, buildTemplateCsv } from './csv-import.js';
 
 const SIZE_LIST = Object.values(SIZE_CONFIGS);
 const PRIMARY_SIZES = SIZE_LIST.filter(c => c.primary);
@@ -53,6 +54,14 @@ const generatePopBtn = document.getElementById('generatePopBtn');
 const scanNotice = document.getElementById('scanNotice');
 const scanNoticeText = document.getElementById('scanNoticeText');
 const scanNoticeSub = document.getElementById('scanNoticeSub');
+const csvImportBtn = document.getElementById('csvImportBtn');
+const csvTemplateBtn = document.getElementById('csvTemplateBtn');
+const csvFileInput = document.getElementById('csvFileInput');
+const csvResult = document.getElementById('csvResult');
+const csvResultSummary = document.getElementById('csvResultSummary');
+const csvResultList = document.getElementById('csvResultList');
+const csvApplyBtn = document.getElementById('csvApplyBtn');
+const csvCancelBtn = document.getElementById('csvCancelBtn');
 
 function escapeHtml(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => (
@@ -110,7 +119,8 @@ async function changeStore(rawValue) {
   let kept = 0;
   try {
     for (const q of popQueue) {
-      if (q.edited) { kept++; continue; }
+      // 修正済みの行と、CSV から読み込んだ行は、価格を取り直さない
+      if (q.edited || q.source === 'csv') { kept++; continue; }
       const fresh = await askMaster('lookup', { jan: q.item.jan, store: currentStore });
       if (fresh) q.item = fresh;
     }
@@ -120,7 +130,7 @@ async function changeStore(rawValue) {
   }
   renderQueueList();
   const label = currentStore ? `店舗 ${currentStore}` : '標準価格';
-  showScanNotice(`${label}の価格に切り替えました${kept ? `（修正済みの ${kept} 件はそのまま）` : ''}`, false, '');
+  showScanNotice(`${label}の価格に切り替えました${kept ? `（修正済み・CSV の ${kept} 件はそのまま）` : ''}`, false, '');
 }
 
 // ============================================================
@@ -185,6 +195,7 @@ function enableInputs() {
   inputsEnabled = true;
   janInput.disabled = false;
   searchNameInput.disabled = false;
+  csvImportBtn.disabled = false;
   // 商品名検索に入力中でなければスキャン欄にフォーカス
   if (document.activeElement !== searchNameInput) janInput.focus();
 }
@@ -364,7 +375,8 @@ async function resetItemToMaster(idx) {
     showScanNotice(`JAN ${q.item.jan} はマスタに見つからないため、元に戻せませんでした`, true);
     return;
   }
-  q.item = fresh;
+  // CSV で指定したミックスマッチ・デザインは残す
+  q.item = { ...fresh, mix: q.item.mix ?? null, themeId: q.item.themeId ?? '' };
   q.edited = false;
 }
 
@@ -496,6 +508,7 @@ function renderQueueList() {
           <div class="queue-card__meta">
             <span class="jan-chip">${escapeHtml(q.item.jan)}</span>
             <span class="edited-badge">✏️ 修正済み</span>
+            ${cardInfoChips(q)}
           </div>
           <div class="card-actions">
             <button type="button" data-action="reset" data-idx="${idx}" class="btn-reset">↺ マスタの値に戻す</button>
@@ -524,6 +537,105 @@ function renderQueueList() {
         </div>
       </div>`).join('');
 }
+
+/** カード見出しの補足（CSV から読み込んだ行・ミックスマッチ・デザインID） */
+function cardInfoChips(q) {
+  const chips = [];
+  if (q.source === 'csv') chips.push('📄 CSV');
+  const mix = q.item.mix;
+  if (mix) chips.push(`${mix.qty}個 税抜${mix.priceExcl.toLocaleString()}円（税込${mix.price.toLocaleString()}円）`);
+  if (q.item.themeId) chips.push(`デザイン: ${q.item.themeId}`);
+  return chips.map(t => `<span class="info-chip">${escapeHtml(t)}</span>`).join('');
+}
+
+// ============================================================
+// 商品リスト CSV の読み込み（読み込み結果を確認してから、リストを置き換える）
+// ============================================================
+const CSV_MESSAGE_LIMIT = 100;   // 画面に並べるエラー・注意の最大数
+let pendingCsvEntries = null;
+
+csvImportBtn.addEventListener('click', () => csvFileInput.click());
+
+csvTemplateBtn.addEventListener('click', () => {
+  const blob = new Blob([buildTemplateCsv()], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'POP商品リスト_テンプレート.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
+csvFileInput.addEventListener('change', async () => {
+  const file = csvFileInput.files[0];
+  csvFileInput.value = '';   // 同じファイルをもう一度選べるように
+  if (!file) return;
+
+  csvImportBtn.disabled = true;
+  try {
+    const text = decodeCsvFile(await file.arrayBuffer());
+    const result = await importProductCsv(text, {
+      lookup: jan => askMaster('lookup', { jan, store: currentStore }),
+      themeIds: await fetchThemeIds()
+    });
+    showCsvResult(file.name, result);
+  } catch (err) {
+    console.error(err);
+    showScanNotice(`CSV を読み込めませんでした: ${err.message}`, true);
+  } finally {
+    csvImportBtn.disabled = false;
+  }
+});
+
+/** 登録済みのデザインID（取得できなければ null ＝確認しない） */
+async function fetchThemeIds() {
+  try {
+    const res = await fetch('/api/themes');
+    if (!res.ok) return null;
+    const list = await res.json();
+    return Array.isArray(list) ? new Set(list.map(t => String(t.id))) : null;
+  } catch {
+    return null;
+  }
+}
+
+function showCsvResult(fileName, result) {
+  pendingCsvEntries = result.entries;
+  const n = result.entries.length;
+  const parts = [`「${fileName}」：読み込める商品 ${n}件`];
+  if (result.janOnly) parts.push('（JAN のみ → 商品情報はマスタから取得）');
+  if (result.errors.length) parts.push(`／エラー ${result.errors.length}件（その行は読み込みません）`);
+  if (result.warnings.length) parts.push(`／注意 ${result.warnings.length}件`);
+  if (n > 0 && popQueue.length > 0) parts.push(`。今のリスト（${popQueue.length}件）は消えて置き換わります。`);
+  csvResultSummary.textContent = parts.join('');
+
+  const messages = [
+    ...result.errors.map(m => `❌ ${m.line}行目: ${m.message}`),
+    ...result.warnings.map(m => `⚠️ ${m.line}行目: ${m.message}`)
+  ];
+  const shown = messages.slice(0, CSV_MESSAGE_LIMIT);
+  if (messages.length > shown.length) shown.push(`ほか ${messages.length - shown.length}件`);
+  csvResultList.innerHTML = shown.map(t => `<li>${escapeHtml(t)}</li>`).join('');
+
+  csvApplyBtn.disabled = n === 0;
+  csvResult.classList.remove('hidden');
+}
+
+function hideCsvResult() {
+  pendingCsvEntries = null;
+  csvResult.classList.add('hidden');
+  csvResultList.innerHTML = '';
+}
+
+csvApplyBtn.addEventListener('click', () => {
+  if (!pendingCsvEntries) return;
+  popQueue = pendingCsvEntries;
+  const n = popQueue.length;
+  hideCsvResult();
+  renderQueueList();
+  showScanNotice(`CSV から ${n}件を読み込みました`, false, 'リストを置き換えました');
+});
+
+csvCancelBtn.addEventListener('click', hideCsvResult);
 
 // ============================================================
 // 初期化（type="module" は DOM 構築後に実行されるので DOMContentLoaded 不要）

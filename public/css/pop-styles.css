@@ -195,6 +195,48 @@
   font-size: var(--pop-yen-size, var(--pop-tax-incl-size));
 }
 
+/* 6'. ミックスマッチ（A8ヨコ以上）: 左に「1個」の価格を小さく、右に「◯個」の価格を大きく */
+.pop-mix {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--pop-mix-gap, 2mm);
+  margin-top: auto;
+  width: 100%;
+}
+.pop-mix-single {
+  flex: 0 0 auto;
+  padding-right: var(--pop-mix-gap, 2mm);
+  border-right: 0.8pt solid var(--pop-text-sub);
+  font-size: var(--pop-mix-single-size, calc(var(--pop-tax-incl-size) * 0.6));
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--pop-text-main);
+  white-space: nowrap;
+}
+.pop-mix-single__qty {
+  font-size: 1.15em;
+  font-weight: 900;
+}
+.pop-mix-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* 「◯個」と「税抜」バッジをひとまとめにする */
+.pop-mix-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+/* 「◯個」の文字（「税抜」バッジの前） */
+.pop-mix-qty {
+  font-size: var(--pop-mix-qty-size, calc(var(--pop-badge-size) * 1.6));
+  font-weight: 900;
+  color: var(--pop-text-main);
+  white-space: nowrap;
+  line-height: 1;
+}
+
 /* 7. 区切り線 */
 .pop-divider {
   border-bottom: 0.8pt solid var(--pop-text-main);

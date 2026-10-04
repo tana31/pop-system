@@ -7,7 +7,11 @@ import { createPopCell } from './pop-cell.js';
 export const ROTATE_SLOT_CLASS = 'pop-rotate-slot';
 export const ROTATE_INNER_CLASS = 'pop-rotate-inner';
 
-export function renderPage(pageDesc, theme) {
+/**
+ * getTheme(item) は、その商品の POP に使うデザイン（テーマ）を返す関数
+ * （CSV でデザインIDを指定した商品はそのデザイン、それ以外は画面で選んだデザイン）
+ */
+export function renderPage(pageDesc, getTheme) {
   const page = document.createElement('div');
   page.className = `a4-page ${pageDesc.orientation}`;
 
@@ -20,7 +24,7 @@ export function renderPage(pageDesc, theme) {
   grid.style.height = '100%';
 
   pageDesc.placements.forEach(pl => {
-    const cell = createPopCell(pl.conf, pl.item, theme);
+    const cell = createPopCell(pl.conf, pl.item, getTheme(pl.item));
     const area = pl.rotate ? wrapRotatedCell(cell, pl, pageDesc) : cell;
     area.style.gridColumn = `${pl.col + 1} / span ${pl.colSpan}`;
     area.style.gridRow = `${pl.row + 1} / span ${pl.rowSpan}`;
