@@ -56,31 +56,25 @@ function normalPriceHtml(item) {
 }
 
 /**
- * ミックスマッチの価格。左に「1個」の価格を小さく、右に「◯個」の価格を通常の価格と同じ大きさで並べる。
- * 右側は通常の価格と同じ部品（クラス）なので、fitPopText による文字の縮小もそのまま効く
+ * ミックスマッチの価格。上に「1個」の価格を1行で小さく、その下に「◯個」の価格を通常の価格と同じ大きさで並べる。
+ * 「◯個」の部分は通常の価格と同じ部品（クラス）なので、fitPopText による文字の縮小もそのまま効く
  */
 function mixPriceHtml(item) {
   const mix = item.mix;
   return `
       <div class="pop-mix">
-        <div class="pop-mix-single">
-          <div class="pop-mix-single__qty">1個</div>
-          <div class="pop-mix-single__excl">税抜 ${yen(item.priceExcl)}円</div>
-          <div class="pop-mix-single__incl">(税込${yen(item.price)}円)</div>
-        </div>
-        <div class="pop-mix-main">
-          <div class="pop-tax-excl-container">
-            <span class="pop-mix-label">
-              <span class="pop-mix-qty">${escapeHtml(mix.qty)}個</span>
-              <span class="pop-tax-badge-black">税抜</span>
-            </span>
-            <div class="pop-price-excl">
-              ${yen(mix.priceExcl)}<span class="unit">円</span>
-            </div>
+        <div class="pop-mix-single">1個 税抜${yen(item.priceExcl)}円 (税込${yen(item.price)}円)</div>
+        <div class="pop-tax-excl-container">
+          <span class="pop-mix-label">
+            <span class="pop-mix-qty">${escapeHtml(mix.qty)}個</span>
+            <span class="pop-mix-tax-label">税抜</span>
+          </span>
+          <div class="pop-price-excl">
+            ${yen(mix.priceExcl)}<span class="unit">円</span>
           </div>
-          <div class="pop-divider"></div>
-          <div class="pop-tax-incl">(税込) ${yen(mix.price)}<span class="unit">円</span></div>
         </div>
+        <div class="pop-divider"></div>
+        <div class="pop-tax-incl">(税込) ${yen(mix.price)}<span class="unit">円</span></div>
       </div>`;
 }
 
