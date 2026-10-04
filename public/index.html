@@ -43,6 +43,12 @@
           <div id="searchSuggestions" class="suggestions hidden"></div>
         </div>
       </div>
+
+      <!-- マスタに無い商品・複数商品向け（「〇〇 各種」）の POP。マスタの読み込みを待たずに使える -->
+      <div class="manual-row">
+        <p class="manual-row__text">マスタに無い商品や「じゃがりこ 各種」のような POP は、手入力で作れます（JAN は空欄でも可）。</p>
+        <button type="button" id="manualAddBtn" class="btn-secondary">✏️ 手入力で追加</button>
+      </div>
     </section>
 
     <!-- STEP 2: 印刷待機リスト -->
@@ -65,6 +71,7 @@
       <div id="scanNotice" class="notice notice--success hidden">
         <span id="scanNoticeText"></span>
         <span id="scanNoticeSub" class="notice__sub">リスト先頭に追加しました</span>
+        <button type="button" id="scanNoticeAction" class="notice__action hidden"></button>
       </div>
 
       <!-- CSV 読み込み結果（確認してから置き換える） -->
@@ -79,7 +86,7 @@
 
       <div id="queueListContainer" class="queue-list">
         <div id="emptyQueueMessage" class="empty-message">
-          JANコードをスキャンすると、ここに商品が追加されます。
+          JANコードをスキャンするか「手入力で追加」を押すと、ここに商品が追加されます。
         </div>
       </div>
 

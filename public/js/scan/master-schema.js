@@ -20,6 +20,8 @@
  *     price: number,      // 税込価格（同上）
  *     taxRate: number|null // 税率（%）。null なら修正フォームで税込を自動計算しない
  *   }
+ * マスタから作る商品データの jan は必ず入っている。手入力・CSV の商品は jan が空のことがあり、
+ * 印刷キューでは noBarcode（true なら JAN を印字しない）が加わることがある（shared/print-queue.js 冒頭）
  */
 
 export const COLUMNS = {

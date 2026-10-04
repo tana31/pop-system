@@ -316,6 +316,18 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
   white-space: nowrap;
 }
 
+/* 手入力で追加 */
+.manual-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem 1rem;
+  padding-top: .75rem;
+  border-top: 1px dashed var(--c-slate-300);
+}
+.manual-row__text { font-size: .75rem; color: var(--c-slate-500); }
+
 /* スキャン通知 */
 .notice {
   display: flex;
@@ -332,6 +344,19 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
 .notice--success { background: #d1fae5; border-color: #34d399; color: var(--c-emerald-800); }
 .notice--success .notice__sub { color: var(--c-emerald-600); }
 .notice--error   { background: #fee2e2; border-color: #f87171; color: #991b1b; }
+/* 通知のボタン（マスタに無い JAN → 手入力の行を作る） */
+.notice__action {
+  margin-left: auto;
+  padding: .25rem .75rem;
+  font-size: .75rem;
+  font-weight: 700;
+  color: #991b1b;
+  background: #fff;
+  border: 1px solid #f87171;
+  border-radius: .25rem;
+  white-space: nowrap;
+}
+.notice__action:hover { background: #fef2f2; }
 
 /* 印刷待機リスト */
 .queue-list { display: flex; flex-direction: column; gap: .75rem; }
@@ -379,6 +404,23 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
   background: var(--c-slate-200);
   border-radius: .25rem;
 }
+/* JAN が無い行・「JANを印字しない」にした行 */
+.jan-chip--none { font-family: inherit; color: var(--c-slate-500); background: var(--c-slate-100); border: 1px dashed var(--c-slate-300); }
+.jan-chip--off  { text-decoration: line-through; color: var(--c-slate-400); }
+.nobarcode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  font-weight: 700;
+  color: var(--c-slate-600);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.queue-card:not(.has-jan) .nobarcode-toggle { display: none; }
+
+/* 手入力の行（マスタの値が無い） */
+.queue-card.is-manual { border-left: 4px solid var(--c-emerald-500); }
+
 .queue-card__body {
   display: flex;
   flex-wrap: wrap;
@@ -408,6 +450,8 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
   border-radius: .25rem;
 }
 .queue-card.is-edited .btn-reset:hover { background: #fde68a; }
+/* 手入力の行・JAN の無い行はマスタに戻せない */
+.queue-card.is-edited.no-master .btn-reset { display: none; }
 
 /* 商品情報の修正欄（12分割グリッド） */
 .item-form {
@@ -437,6 +481,7 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
 .item-input--price { text-align: right; font-weight: 700; }
 .item-input--incl { color: var(--c-red-600); }
 .item-input::placeholder { color: var(--c-slate-400); font-weight: 400; }
+.item-input--select { padding: .25rem .375rem; }
 
 @media (max-width: 767px) {
   .item-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }

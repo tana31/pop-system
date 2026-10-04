@@ -306,6 +306,9 @@
 }
 /* バーコードにできないJAN（桁数違い・チェックデジット誤り等）は数字だけ。高さはそろえて価格の位置がずれないようにする */
 .pop-barcode.is-text-only { padding: var(--pop-barcode-h, 6mm) 0.5mm 0; }
+/* JAN の無い商品・「JANを印字しない」商品は何も見せず、場所だけ残す（価格の位置を他の POP とそろえる）。
+   場所も詰めたい場合は visibility: hidden を display: none に変える */
+.pop-barcode.is-empty { visibility: hidden; }
 
 /* ==========================================================================
    サイズ別 CSS変数スケール調整

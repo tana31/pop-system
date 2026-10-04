@@ -9,18 +9,23 @@
  *
  * 店舗番号はヘッダーで入力し、この端末に記憶する（localStorage の STORE_STORAGE_KEY）。
  * マスタWorker には検索のたびに店舗番号を渡し、その店舗の価格（例外価格が無ければ標準価格）を受け取る。
+ *
+ * マスタに無い商品や「じゃがりこ 各種」のような複数商品向けの POP は「手入力で追加」で作る（source: 'manual'）。
+ * 手入力の行は JAN・税率も入力でき、JAN は空欄でもよい（空欄ならバーコードを印字しない）。
+ * マスタから追加した行も「JANを印字しない」（item.noBarcode）にすれば、バーコード無しの POP にできる。
  */
 import { SIZE_CONFIGS, DEFAULT_SIZE_KEY, createDefaultCounts } from '../shared/pop-sizes.js';
 import { calcPriceIncl } from '../shared/price.js';
 import { loadQueue, saveQueue as storeQueue, toCount } from '../shared/print-queue.js';
 import { importProductCsv, decodeCsvFile, buildTemplateCsv } from './csv-import.js';
+import { normalizeJan } from './master-schema.js';
 
 const SIZE_LIST = Object.values(SIZE_CONFIGS);
 const PRIMARY_SIZES = SIZE_LIST.filter(c => c.primary);
 const OPTION_SIZES = SIZE_LIST.filter(c => !c.primary);
 
 // 印刷待機リストで修正できる項目（span は 12分割グリッドでの幅）
-// JAN は同一商品の判定と「マスタの値に戻す」に使うため修正不可
+// マスタ・CSV の行の JAN は同一商品の判定と「マスタの値に戻す」に使うため修正不可
 const EDIT_FIELDS = [
   { key: 'name',      label: '商品名',     span: 6 },
   { key: 'maker',     label: 'メーカー',   span: 3 },
@@ -30,6 +35,27 @@ const EDIT_FIELDS = [
   { key: 'risk',      label: '医薬品区分', span: 2 },
   { key: 'priceExcl', label: '税抜価格',   span: 3, price: true },
   { key: 'price',     label: '税込価格',   span: 3, price: true }
+];
+
+// 手入力の行の項目（JAN と税率も入力できる。並びは 12分割で 3行に収まるようにしている）
+const MANUAL_FIELDS = [
+  { key: 'jan',       label: 'JAN（任意）', span: 3, placeholder: '空欄ならバーコードなし', numeric: true },
+  { key: 'name',      label: '商品名',      span: 6, placeholder: '例: じゃがりこ 各種' },
+  { key: 'maker',     label: 'メーカー',    span: 3 },
+  { key: 'comment',   label: 'コメント',    span: 3 },
+  { key: 'qty1',      label: '数量1',       span: 2 },
+  { key: 'qty2',      label: '数量2',       span: 2 },
+  { key: 'risk',      label: '医薬品区分',  span: 2 },
+  { key: 'taxRate',   label: '税率',        span: 3 },
+  { key: 'priceExcl', label: '税抜価格',    span: 3, price: true },
+  { key: 'price',     label: '税込価格',    span: 3, price: true }
+];
+
+// 手入力の行の税率の選択肢。未選択のままなら税込価格は自動計算しない（手で入力する）
+const TAX_RATE_OPTIONS = [
+  { value: '',  label: '未選択' },
+  { value: 8,   label: '8%（軽減）' },
+  { value: 10,  label: '10%' }
 ];
 
 // 店舗番号を記憶する localStorage のキー（印刷キューとは別に、この端末の設定として持つ）
@@ -62,6 +88,8 @@ const csvResultSummary = document.getElementById('csvResultSummary');
 const csvResultList = document.getElementById('csvResultList');
 const csvApplyBtn = document.getElementById('csvApplyBtn');
 const csvCancelBtn = document.getElementById('csvCancelBtn');
+const manualAddBtn = document.getElementById('manualAddBtn');
+const scanNoticeAction = document.getElementById('scanNoticeAction');
 
 function escapeHtml(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => (
@@ -119,8 +147,8 @@ async function changeStore(rawValue) {
   let kept = 0;
   try {
     for (const q of popQueue) {
-      // 修正済みの行と、CSV から読み込んだ行は、価格を取り直さない
-      if (q.edited || q.source === 'csv') { kept++; continue; }
+      // 修正済みの行・CSV から読み込んだ行・手入力の行・JAN の無い行は、価格を取り直さない
+      if (q.edited || q.source === 'csv' || q.source === 'manual' || !q.item.jan) { kept++; continue; }
       const fresh = await askMaster('lookup', { jan: q.item.jan, store: currentStore });
       if (fresh) q.item = fresh;
     }
@@ -130,7 +158,7 @@ async function changeStore(rawValue) {
   }
   renderQueueList();
   const label = currentStore ? `店舗 ${currentStore}` : '標準価格';
-  showScanNotice(`${label}の価格に切り替えました${kept ? `（修正済み・CSV の ${kept} 件はそのまま）` : ''}`, false, '');
+  showScanNotice(`${label}の価格に切り替えました${kept ? `（修正済み・CSV・手入力の ${kept} 件はそのまま）` : ''}`, false, '');
 }
 
 // ============================================================
@@ -235,9 +263,15 @@ janInput.addEventListener('keydown', async (e) => {
     addItemToQueue(item);
     showScanNotice(`「${item.name}」を追加しました`);
   } else {
-    showScanNotice(`JAN ${jan} はマスタに見つかりませんでした`, true);
+    const code = normalizeJan(jan);
+    showScanNotice(`JAN ${jan} はマスタに見つかりませんでした`, true, '', {
+      label: '✏️ このJANで手入力のPOPを作る',
+      run: () => addManualItem(code)
+    });
   }
 });
+
+manualAddBtn.addEventListener('click', () => addManualItem());
 
 {
   let searchTimer = null;
@@ -307,6 +341,19 @@ queueListContainer.addEventListener('change', (e) => {
   const itemInput = e.target.closest('.item-input');
   if (itemInput) {
     updateItemField(Number(itemInput.dataset.idx), itemInput.dataset.key, itemInput.value);
+    return;
+  }
+
+  // 「JANを印字しない」
+  const check = e.target.closest('.item-check');
+  if (check) {
+    const idx = Number(check.dataset.idx);
+    const q = popQueue[idx];
+    if (!q) return;
+    q.item.noBarcode = check.checked;
+    if (q.source !== 'manual') q.edited = true;
+    saveQueue();
+    refreshCardState(idx);
   }
 });
 
@@ -346,7 +393,16 @@ function updateItemField(idx, key, rawValue) {
   const item = q.item;
   const value = String(rawValue ?? '').trim();
 
-  if (key === 'priceExcl') {
+  if (key === 'jan') {
+    // 手入力の行だけ。空欄なら「JANを印字しない」も外す（印字するものが無いため）
+    item.jan = normalizeJan(value);
+    if (!item.jan) item.noBarcode = false;
+  } else if (key === 'taxRate') {
+    // 税率を選んだら、税抜から税込を計算し直す（未選択に戻した場合、税込はそのまま）
+    item.taxRate = value === '' ? null : Number(value);
+    const incl = calcPriceIncl(item.priceExcl, item.taxRate);
+    if (incl !== null) item.price = incl;
+  } else if (key === 'priceExcl') {
     // 税抜を直すと、その商品の税率で税込を計算し直す（税率が無ければ税込はそのまま）
     item.priceExcl = toPrice(value);
     const incl = calcPriceIncl(item.priceExcl, item.taxRate ?? null);
@@ -357,7 +413,8 @@ function updateItemField(idx, key, rawValue) {
     item[key] = value;
   }
 
-  q.edited = true;
+  // 手入力の行はマスタの値が無いので「修正済み」にしない
+  if (q.source !== 'manual') q.edited = true;
   saveQueue();
   refreshCardState(idx);
 }
@@ -376,35 +433,64 @@ async function resetItemToMaster(idx) {
     return;
   }
   // CSV で指定したミックスマッチ・デザインは残す
+  // （「JANを印字しない」は修正の一部なので取り消す）
   q.item = { ...fresh, mix: q.item.mix ?? null, themeId: q.item.themeId ?? '' };
   q.edited = false;
 }
 
-/** 修正後のカード表示（修正済みバッジ・価格欄）だけを更新 */
+/** 修正後のカード表示（修正済みバッジ・JAN・価格欄）だけを更新 */
 function refreshCardState(idx) {
   const card = queueListContainer.querySelector(`.queue-card[data-idx="${idx}"]`);
   if (!card) return;
   const q = popQueue[idx];
-  card.classList.toggle('is-edited', !!q.edited);
+  card.className = cardClassName(q);
 
+  const chip = card.querySelector('.jan-chip');
+  if (chip) chip.outerHTML = janChipHtml(q.item);
+  const check = card.querySelector('.item-check');
+  if (check) check.checked = !!q.item.noBarcode;
+
+  const janField = card.querySelector('.item-input[data-key="jan"]');
+  if (janField) janField.value = q.item.jan;
   const exclInput = card.querySelector('.item-input[data-key="priceExcl"]');
   if (exclInput) exclInput.value = q.item.priceExcl;
   const priceInput = card.querySelector('.item-input[data-key="price"]');
-  if (priceInput) priceInput.value = q.item.price;
+  if (priceInput) {
+    priceInput.value = q.item.price;
+    const label = priceInput.parentElement.querySelector('.item-field__label');
+    if (label) label.textContent = `税込価格${fieldNote({ key: 'price', price: true }, q.item)}`;
+  }
 }
 
 // ============================================================
 // 画面描画
 // ============================================================
 let noticeTimer = null;
-function showScanNotice(text, isError = false, sub = 'リスト先頭に追加しました') {
+let noticeAction = null;
+
+/**
+ * 通知を出す。action（{ label, run }）を渡すと通知にボタンを付ける（押せるよう長めに表示する）
+ */
+function showScanNotice(text, isError = false, sub = 'リスト先頭に追加しました', action = null) {
   scanNoticeText.textContent = text;
   scanNoticeSub.textContent = isError ? '' : sub;
   scanNotice.className = `notice ${isError ? 'notice--error' : 'notice--success'}`;
 
+  noticeAction = action ? action.run : null;
+  scanNoticeAction.textContent = action ? action.label : '';
+  scanNoticeAction.classList.toggle('hidden', !action);
+
   clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => scanNotice.classList.add('hidden'), isError ? 4000 : 2500);
+  const ms = action ? 8000 : (isError ? 4000 : 2500);
+  noticeTimer = setTimeout(() => scanNotice.classList.add('hidden'), ms);
 }
+
+scanNoticeAction.addEventListener('click', () => {
+  const run = noticeAction;
+  clearTimeout(noticeTimer);
+  scanNotice.classList.add('hidden');
+  if (run) run();
+});
 
 function renderSuggestions(list) {
   if (!list || list.length === 0) {
@@ -435,7 +521,10 @@ function renderSuggestions(list) {
 }
 
 function addItemToQueue(item) {
-  const existingIdx = popQueue.findIndex(q => q.item.jan === item.jan);
+  // 同じ JAN の行があれば枚数を足す（手入力の行と「JANを印字しない」にした行は別物として扱う）
+  const existingIdx = popQueue.findIndex(q => (
+    q.source !== 'manual' && !q.item.noBarcode && q.item.jan === item.jan
+  ));
 
   if (existingIdx >= 0) {
     const target = popQueue.splice(existingIdx, 1)[0];
@@ -452,6 +541,30 @@ function addItemToQueue(item) {
   renderQueueList();
 }
 
+/** 空の手入力の行をリストの先頭に追加し、商品名の欄にフォーカスする */
+function addManualItem(jan = '') {
+  popQueue.unshift({
+    item: {
+      jan,
+      name: '',
+      maker: '',
+      priceExcl: 0,
+      price: 0,
+      taxRate: null,
+      comment: '',
+      qty1: '',
+      qty2: '',
+      risk: ''
+    },
+    counts: createDefaultCounts(),
+    showOptions: globalOptionsVisible,
+    source: 'manual'
+  });
+  renderQueueList();
+  queueListContainer.querySelector('.queue-card[data-idx="0"] .item-input[data-key="name"]')?.focus();
+  showScanNotice('手入力の行を追加しました', false, '商品名と価格を入力してください');
+}
+
 /** 修正欄の見出しの補足（税込価格には税率を示す） */
 function fieldNote(f, item) {
   if (!f.price) return '';
@@ -462,16 +575,47 @@ function fieldNote(f, item) {
 
 /** 商品情報の修正欄 */
 function itemFieldHtml(f, item, idx) {
+  if (f.key === 'taxRate') return taxRateFieldHtml(f, item, idx);
   const value = item[f.key] ?? '';
   const inputAttrs = f.price
     ? `type="number" min="0" step="1" inputmode="numeric"`
-    : `type="text"`;
+    : `type="text"${f.numeric ? ' inputmode="numeric"' : ''}${f.placeholder ? ` placeholder="${escapeHtml(f.placeholder)}"` : ''}`;
   return `
     <label class="item-field item-field--span${f.span}">
       <span class="item-field__label">${f.label}${escapeHtml(fieldNote(f, item))}</span>
       <input ${inputAttrs} class="item-input${f.price ? ' item-input--price' : ''}${f.key === 'price' ? ' item-input--incl' : ''}"
         data-idx="${idx}" data-key="${f.key}" value="${escapeHtml(value)}" autocomplete="off">
     </label>`;
+}
+
+/** 税率の選択欄（手入力の行だけ） */
+function taxRateFieldHtml(f, item, idx) {
+  const current = item.taxRate == null ? '' : String(item.taxRate);
+  const options = TAX_RATE_OPTIONS.map(o => (
+    `<option value="${o.value}"${String(o.value) === current ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
+  )).join('');
+  return `
+    <label class="item-field item-field--span${f.span}">
+      <span class="item-field__label">${f.label}</span>
+      <select class="item-input item-input--select" data-idx="${idx}" data-key="taxRate">${options}</select>
+    </label>`;
+}
+
+/** カードのクラス（修正済み・手入力・マスタに戻せない・JAN あり） */
+function cardClassName(q) {
+  const classes = ['queue-card'];
+  if (q.edited) classes.push('is-edited');
+  if (q.source === 'manual') classes.push('is-manual');
+  if (q.source === 'manual' || !q.item.jan) classes.push('no-master');
+  if (q.item.jan) classes.push('has-jan');
+  return classes.join(' ');
+}
+
+/** カード見出しの JAN 表示 */
+function janChipHtml(item) {
+  if (!item.jan) return '<span class="jan-chip jan-chip--none">JANなし</span>';
+  const off = item.noBarcode ? ' jan-chip--off' : '';
+  return `<span class="jan-chip${off}">${escapeHtml(item.jan)}</span>`;
 }
 
 /** 主要サイズの枚数欄（常時表示） */
@@ -503,10 +647,14 @@ function renderQueueList() {
   }
 
   queueListContainer.innerHTML = popQueue.map((q, idx) => `
-      <div class="queue-card${q.edited ? ' is-edited' : ''}" data-idx="${idx}">
+      <div class="${cardClassName(q)}" data-idx="${idx}">
         <div class="queue-card__head">
           <div class="queue-card__meta">
-            <span class="jan-chip">${escapeHtml(q.item.jan)}</span>
+            ${janChipHtml(q.item)}
+            <label class="nobarcode-toggle">
+              <input type="checkbox" class="item-check" data-idx="${idx}"${q.item.noBarcode ? ' checked' : ''}>
+              JANを印字しない
+            </label>
             <span class="edited-badge">✏️ 修正済み</span>
             ${cardInfoChips(q)}
           </div>
@@ -522,7 +670,7 @@ function renderQueueList() {
 
         <div class="queue-card__body">
           <div class="item-form">
-            ${EDIT_FIELDS.map(f => itemFieldHtml(f, q.item, idx)).join('')}
+            ${(q.source === 'manual' ? MANUAL_FIELDS : EDIT_FIELDS).map(f => itemFieldHtml(f, q.item, idx)).join('')}
           </div>
           <div class="count-group">
             ${PRIMARY_SIZES.map(c => primaryFieldHtml(c, q, idx)).join('')}
@@ -538,9 +686,10 @@ function renderQueueList() {
       </div>`).join('');
 }
 
-/** カード見出しの補足（CSV から読み込んだ行・ミックスマッチ・デザインID） */
+/** カード見出しの補足（手入力・CSV から読み込んだ行・ミックスマッチ・デザインID） */
 function cardInfoChips(q) {
   const chips = [];
+  if (q.source === 'manual') chips.push('✏️ 手入力');
   if (q.source === 'csv') chips.push('📄 CSV');
   const mix = q.item.mix;
   if (mix) chips.push(`${mix.qty}個 税抜${mix.priceExcl.toLocaleString()}円（税込${mix.price.toLocaleString()}円）`);

@@ -2,6 +2,7 @@
  * POPセル（1枚分）のDOM生成
  * item はマスタWorkerが変換済みの商品データ（形は js/scan/master-schema.js 冒頭を参照）。
  * CSV から読み込んだ商品は mix（ミックスマッチ）と themeId を持つことがある（js/scan/csv-import.js 冒頭）
+ * jan が空の商品（手入力・「〇〇 各種」）と noBarcode が true の商品は、バーコードを印字しない
  */
 import { applyThemeColors, themeImageUrls } from './themes.js';
 import { createBarcodeElement } from './barcode.js';
@@ -28,9 +29,10 @@ export function createPopCell(conf, item, theme) {
   `;
 
   // POP下部に JAN バーコードと数字、その下に医薬品リスク区分（左寄せ）を配置。
-  // リスク区分が未記入でも要素は作る（CSSで1行分の高さを確保し、POPごとに位置がずれないようにしている）
+  // リスク区分が未記入でも要素は作る（CSSで1行分の高さを確保し、POPごとに位置がずれないようにしている）。
+  // バーコードを印字しない商品も、空の要素で場所だけ空けておく（価格の位置を他の POP とそろえる）
   const content = cell.querySelector('.pop-content');
-  content.appendChild(createBarcodeElement(item.jan));
+  content.appendChild(createBarcodeElement(item.noBarcode ? '' : item.jan));
   const risk = document.createElement('div');
   risk.className = 'pop-risk-tag';
   risk.textContent = item.risk ?? '';

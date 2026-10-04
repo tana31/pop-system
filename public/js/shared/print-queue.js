@@ -6,7 +6,11 @@
  *   [{ item: 商品データ（形は scan/master-schema.js 冒頭）,
  *      counts: { a9: 枚数, a8: 枚数, ... },
  *      showOptions: boolean,   // スキャン画面で「他サイズ」を開いているか
- *      edited?: boolean }]     // スキャン画面で商品情報を修正したか
+ *      edited?: boolean,       // スキャン画面で商品情報を修正したか
+ *      source?: 'csv' | 'manual' }]  // 追加元（無ければマスタ。manual は手入力でマスタの値を持たない）
+ *
+ * item.jan は空文字でもよい（手入力・「〇〇 各種」の POP）。JAN が空の行や item.noBarcode が true の行は
+ * バーコードを印字しない。以前の形式（jan が必ず入っている）もそのまま読めるので、キーの番号は変えていない
  */
 import { SIZE_CONFIGS } from './pop-sizes.js';
 

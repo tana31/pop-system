@@ -5,6 +5,8 @@
  *  - 見出し行の列名で列を探す（並び順は自由、使わない列は省略可。全角・空白の違いは無視）
  *  - 商品情報の列が JAN だけなら「JAN のみ」とみなし、商品情報はマスタ（画面の店舗の価格）から取る。
  *    それ以外は CSV の値だけを使い、未記入の欄は空欄のまま（マスタで補わない）
+ *  - 「JAN のみ」でなければ JAN は空欄でもよい（マスタに無い商品・「〇〇 各種」の POP。バーコードは印字しない）。
+ *    JAN の列そのものが無くてもよい
  *  - ミックスマッチ・デザインID・枚数の列は「JAN のみ」の判定に含めず、どちらでも使える
  *  - 医薬品区分と税率は常にマスタから取る（マスタに無い商品は空欄・税率なし）
  *  - 枚数の列が1つも無ければ、全商品を既定のサイズ（DEFAULT_SIZE_KEY）1枚にする
@@ -82,15 +84,16 @@ export async function importProductCsv(text, { lookup, themeIds = null }) {
     if (key && cols[key] === undefined) cols[key] = i;
     else if (h !== '') unknown.push(h);
   });
-  if (cols.jan === undefined) {
-    result.errors.push({ line: 1, message: '「JAN」の列がありません。' });
+  if (Object.keys(INFO_COLUMNS).every(k => cols[k] === undefined)) {
+    result.errors.push({ line: 1, message: '商品情報の列がありません（「JAN」か「商品名」などの列が必要です）。' });
     return result;
   }
   if (unknown.length) {
     result.warnings.push({ line: 1, message: `使われない列があります: ${unknown.join('、')}` });
   }
 
-  result.janOnly = Object.keys(INFO_COLUMNS).every(k => k === 'jan' || cols[k] === undefined);
+  result.janOnly = cols.jan !== undefined
+    && Object.keys(INFO_COLUMNS).every(k => k === 'jan' || cols[k] === undefined);
   const countKeys = Object.keys(SIZE_CONFIGS).filter(k => cols[`count:${k}`] !== undefined);
   const get = (row, key) => (cols[key] === undefined ? '' : String(row[cols[key]] ?? '').trim());
 
@@ -113,7 +116,8 @@ export async function importProductCsv(text, { lookup, themeIds = null }) {
     if (/[eE][+-]?\d+$/.test(rawJan) || rawJan.includes('.')) {
       err(`JAN「${rawJan}」が指数表記などに変わっています（Excel で JAN の列を「文字列」にしてから入力してください）`);
     } else if (!jan) {
-      err('JAN が空です');
+      // 「JAN のみ」は JAN でマスタを引くので必須。それ以外は空欄でよい（バーコードなし）
+      if (result.janOnly) err('JAN が空です');
     } else if (!isJanFormat(jan)) {
       err(`JAN「${rawJan}」は 8・12・13 桁の数字で入力してください`);
     } else if (!isValidCheckDigit(jan)) {
@@ -143,6 +147,7 @@ export async function importProductCsv(text, { lookup, themeIds = null }) {
           risk:      master?.risk ?? ''
         };
         checkTax(item.priceExcl, item.price, item.taxRate, '', warn);
+        if (!item.name) warn('商品名が空です');
       }
     }
 

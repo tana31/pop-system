@@ -11,6 +11,7 @@
  *   12桁 … UPC-A として正しければ先頭に 0 を付けて EAN-13
  *   8桁  … チェックデジットが正しければ EAN-8
  *   それ以外（桁数違い・チェックデジット誤り・数字以外）… null（POPには数字だけを表示する）
+ *   空（JAN の無い商品・「JANを印字しない」）… 何も見せないが、バーコード1つ分の場所は空けておく
  */
 
 // 左側 奇数パリティ（L）・偶数パリティ（G）、右側（R）の符号
@@ -97,13 +98,24 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
  * JANバーコードの要素（線は SVG、数字は文字）。バーコードにできないJANは数字だけ表示する。
+ * JAN が空のときは中身の無い要素を返す（CSS の is-empty で見えなくし、高さだけ残して価格の位置をそろえる）。
  * 線は PDF 出力時にベクターで描き直すため、1モジュール=1単位の viewBox と data-bits（1=黒/0=白）を持たせる
  */
 export function createBarcodeElement(jan) {
   const box = document.createElement('div');
   box.className = 'pop-barcode';
 
-  const encoded = encodeJan(jan);
+  const code = String(jan ?? '').trim();
+  if (!code) {
+    box.classList.add('is-text-only', 'is-empty');
+    const blank = document.createElement('div');
+    blank.className = 'pop-barcode-text';
+    blank.textContent = '\u00A0';   // 数字1行ぶんの高さを確保する
+    box.appendChild(blank);
+    return box;
+  }
+
+  const encoded = encodeJan(code);
   if (encoded) {
     box.classList.add(encoded.type === 'EAN-8' ? 'is-ean8' : 'is-ean13');
 
@@ -130,7 +142,7 @@ export function createBarcodeElement(jan) {
 
   const text = document.createElement('div');
   text.className = 'pop-barcode-text';
-  text.textContent = jan || '';
+  text.textContent = code;
   box.appendChild(text);
   return box;
 }
