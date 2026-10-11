@@ -197,7 +197,11 @@
    「税抜」の文字（赤・背景なし）＋ 大きな価格 ＋「円」を1行に並べ、右に寄せる。
    行の文字サイズを --pop-price-size にし、「税抜」やバッジは em（価格に対する比率）で決める。
    右寄せは justify-content ではなく「税抜」側の margin-left: auto で行う
-   （入り切らないときに右へはみ出させ、fitPopText が scrollWidth ではみ出し幅を測れるようにするため） */
+   （入り切らないときに右へはみ出させ、fitPopText が scrollWidth ではみ出し幅を測れるようにするため）。
+   上下は「下端」ではなく文字のベースラインでそろえる。下端（flex-end）だと箱の下端がそろうだけで、
+   フォント（Bahnschrift と Noto Sans JP）や文字サイズごとに字の下端がずれるため。
+   漢字はベースラインより少し下（字の大きさの約 0.09 倍）まではみ出すので、「税抜」「円」は
+   --pop-kanji-lift だけ持ち上げて、字の下端を数字の下端にそろえる */
 .pop-price {
   margin-top: auto;
   width: 100%;
@@ -207,7 +211,7 @@
 
 .pop-price-row {
   display: flex;
-  align-items: flex-end;
+  align-items: baseline;
   width: 100%;
   min-width: 0;
   font-size: var(--pop-price-size);
@@ -223,7 +227,6 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 0.04em;
-  padding-bottom: 0.07em;   /* 「税抜」の下端を数字の下端にそろえる */
   flex: 0 0 auto;
 }
 .pop-price-tax {
@@ -231,6 +234,8 @@
   font-size: max(var(--pop-price-label-ratio, 0.3em), var(--pop-price-label-min, 6.5px));
   font-weight: 900;
   line-height: 1;
+  position: relative;
+  top: calc(var(--pop-kanji-lift, 0.09em) * -1);   /* 漢字のはみ出し分を持ち上げる（配置には影響しない） */
 }
 
 /* 税抜価格（数字）。fitPopText はこの要素の文字だけを縮める */
@@ -251,8 +256,9 @@
 }
 .pop-price-row .unit {
   margin-left: 0.04em;
-  padding-bottom: 0.04em;
   flex: 0 0 auto;
+  position: relative;
+  top: calc(var(--pop-kanji-lift, 0.09em) * -1);
 }
 
 /* 7. 区切り線（価格の真下に引く赤い線） */
