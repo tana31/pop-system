@@ -450,13 +450,11 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 @keyframes toast-in { from { opacity: 0; transform: translateY(.5rem); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
-/* ---- 印刷待機リスト（1商品＝3段の表） ----
-   1段目：商品名・数量1・医薬品区分・税抜、2段目：JAN・メーカー・数量2・税率・税込、
-   3段目：コメント（商品名〜価格の列の下まで横に広く使う）。枚数と操作は列ごとに縦に並ぶ
+/* ---- 印刷待機リスト（1商品＝2行の表） ----
    列の並びと幅は scan-app.js の gridColumns() が --q-cols に入れる。幅の値はここで決める */
 .queue-list {
   --q-col-icon: 1.25rem;
-  --q-col-item-min: 20rem;
+  --q-col-item-min: 20rem;   /* 2段目の JAN・メーカー・コメントの最小幅の合計（約19rem）より広く */
   --q-col-qty: 6.5rem;
   --q-col-risk: 7rem;   /* 「第3類医薬品」が切れない幅 */
   --q-col-price: 5rem;
@@ -518,7 +516,7 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 }
 .q-size-toggle:hover { color: var(--c-primary); border-color: var(--c-primary); }
 
-/* 行（3段）。修正済みは左端を赤に */
+/* 行（2段）。修正済みは左端を赤に */
 .queue-row {
   row-gap: .25rem;
   padding: .375rem .5rem;
@@ -532,7 +530,7 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 @keyframes row-flash { 0%, 30% { background: var(--c-primary-tint); } }
 @media (prefers-reduced-motion: reduce) { .queue-row.is-flash { animation: none; } }
 
-/* 状態アイコン（1段目：CSV・手入力、2段目：修正済み、3段目：なし） */
+/* 状態アイコン（1段目：CSV・手入力、2段目：修正済み） */
 .q-icons { display: grid; place-items: center; color: var(--c-text-mute); }
 .q-icon { display: grid; }
 .q-icon svg { width: 1rem; height: 1rem; }
@@ -582,19 +580,19 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .item-input:focus { border-color: var(--c-primary); box-shadow: var(--focus-ring); }
 .item-input--name { font-weight: 700; }
 .item-input--jan { flex: 0 0 7rem; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8125rem; }
-.item-input--maker { flex: 1 1 auto; }
-
-/* 3段目：コメント。商品名の列から価格（ミックスマッチ）の列の右端まで（grid の線 2〜7）。
-   列の番号は scan-app.js の gridColumns() の並び（1 アイコン、2 商品名、3 数量、4 区分、5 価格、6 ミックスマッチ）。
-   HTML 上は2段目の途中にあるが（Tab の順のため）、段と列を指定しているので3段目に置かれる */
-.q-comment { grid-row: 3; grid-column: 2 / 7; gap: .375rem; }
-.item-input--comment { flex: 1 1 auto; }
+.item-input--maker { flex: 0 1 9rem; min-width: 4.5rem; }
+/* コメントは残りの幅をすべて使う。狭くなるときはメーカーから先に縮める */
+.item-input--comment { flex: 1 1 8rem; min-width: 6rem; }
 /* コメントが長すぎて、印刷するサイズのどれかで表示されないとき（scan-app.js の updateCommentCheck） */
 .item-input.is-over,
 .item-input.is-over:hover { border: 2px solid var(--c-primary); background: var(--c-primary-tint); }
 .q-comment-check { display: contents; }
+/* 「A9 非表示」は幅が足りなければ省略（…）して、ほかの列にはみ出さない。全文は title で見られる */
 .q-warn {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0 .375rem;
   font-size: .6875rem;
   font-weight: 700;
@@ -625,8 +623,8 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .q-mix__qty { font-size: .75rem; color: var(--c-text-sub); }
 .q-mix--incl { color: var(--c-primary); }
 
-/* 枚数（3段ぶんの高さで縦中央） */
-.q-count { grid-row: span 3; display: grid; align-items: center; }
+/* 枚数（2段ぶんの高さで縦中央） */
+.q-count { grid-row: span 2; display: grid; }
 .count-input {
   width: 100%;
   height: 2.25rem;

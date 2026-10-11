@@ -4,7 +4,7 @@
  * このファイルは画面操作だけを行う。Worker から届くのは変換済みの商品データ
  * （{ jan, name, maker, price, ... }、形は master-schema.js 参照）なので、ここでは列名を扱わない。
  *
- * 印刷待機リストは1商品3段の表で、各項目はその場で修正でき、修正内容は印刷キューに保存されてプレビュー・PDFに反映される。
+ * 印刷待機リストは1商品2行の表で、各項目はその場で修正でき、修正内容は印刷キューに保存されてプレビュー・PDFに反映される。
  * 修正はこのリスト内だけのもので、商品マスタ（R2のCSV）は変更しない。
  *
  * 店舗番号はヘッダーで入力し、この端末に記憶する（localStorage の STORE_STORAGE_KEY）。
@@ -28,10 +28,9 @@ import { normalizeJan } from './master-schema.js';
 
 const SIZE_LIST = Object.values(SIZE_CONFIGS);
 
-// 印刷待機リストは「1商品＝3段」の表。列の並び（左から）:
-//   状態アイコン ／ 商品名・JAN・メーカー ／ 数量1・2 ／ 区分・税率 ／ 税抜・税込
+// 印刷待機リストは「1商品＝2行」の表。列の並び（左から）:
+//   状態アイコン ／ 商品名・JAN・メーカー・コメント ／ 数量1・2 ／ 区分・税率 ／ 税抜・税込
 //   ／ ミックスマッチ（ある行が1つでもあるときだけ）／ サイズ別の枚数 ／ 操作
-// 3段目はコメントだけで、商品名の列からミックスマッチの列まで横に広く使う（app.css の .q-comment）
 // マスタ・CSV の行の JAN は同一商品の判定と「マスタの値に戻す」に使うため修正不可（手入力の行だけ入力欄にする）
 //
 // サイズ別の枚数列は、主要サイズ（pop-sizes.js の primary）を常に出し、それ以外は
@@ -698,7 +697,7 @@ const ICON_CSV = svg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0
 const ICON_MANUAL = svg('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>');
 const ICON_EDITED = svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>');
 
-/** 1段目：取り込み元（CSV・手入力）、2段目：修正済み（3段目はなし） */
+/** 1段目：取り込み元（CSV・手入力）、2段目：修正済み */
 function sourceIconHtml(q) {
   if (q.source === 'csv') return `<span class="q-icon" title="CSVから読み込み" aria-label="CSVから読み込み" role="img">${ICON_CSV}</span>`;
   if (q.source === 'manual') return `<span class="q-icon" title="手入力" aria-label="手入力" role="img">${ICON_MANUAL}</span>`;
@@ -783,7 +782,7 @@ function headerHtml(sizes, hasHidden, hasMix) {
   return `
     <div class="queue-head" role="row">
       <span></span>
-      <span>商品名 ／ JAN・メーカー ／ コメント</span>
+      <span>商品名 ／ JAN・メーカー・コメント</span>
       <span>数量</span>
       <span>区分 ／ 税率</span>
       <span class="q-num">税抜 ／ 税込</span>
@@ -827,12 +826,9 @@ function rowHtml(q, idx, sizes) {
       <div class="q-cell q-detail">
         ${manual ? inputHtml(q, idx, 'jan', 'JAN', ' item-input--jan') : janTextHtml(q.item)}
         ${inputHtml(q, idx, 'maker', 'メーカー', ' item-input--maker')}
-        ${themeTag}
-      </div>
-      <!-- コメントは3段目（位置は CSS の .q-comment）。Tab の順がメーカー → コメント → 数量2 になるよう、ここに書く -->
-      <div class="q-cell q-comment">
         ${inputHtml(q, idx, 'comment', 'コメント', commentCls)}
         <span class="q-comment-check">${check.html}</span>
+        ${themeTag}
       </div>
       <div class="q-cell">${inputHtml(q, idx, 'qty2', '数量2')}</div>
       <div class="q-cell">${manual ? taxSelectHtml(q, idx) : `<span class="tax-text">${taxRateText(q.item)}</span>`}</div>
