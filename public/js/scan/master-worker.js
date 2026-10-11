@@ -5,7 +5,7 @@
  *  - 解析したマスタは IndexedDB に保存し、次回以降は即座に利用
  *  - 裏でサーバーにバージョン確認し、変わっていれば自動で差し替え
  *  - 列名の解決はここで完結し、画面には変換済みの「商品データ」だけを渡す
- *  - 価格は「指定された店舗の例外価格（P 行）があればそれ、無ければ標準価格（I 行）」
+ *  - 価格は「指定された店舗の価格（P 行）があればそれ、無ければ標準価格（I 行。空なら 0 円）」
  *
  * 起動: new Worker(new URL('./master-worker.js', import.meta.url), { type: 'module' })
  *
@@ -35,7 +35,7 @@ let rows = [];
 let reader = null;
 let itemRowIdx = [];        // 商品行（I 行）の行番号。検索はこの順に行う
 let janIndex = new Map();   // JAN → 商品行の行番号（同じJANが複数あれば後ろの行が優先）
-let priceIndex = new Map(); // "店舗番号\tJAN" → 例外価格行（P 行）の行番号
+let priceIndex = new Map(); // "店舗番号\tJAN" → 店舗の価格行（P 行）の行番号
 let nameIndex = [];         // 正規化済み商品名（itemRowIdx と同じ並び。検索用）
 
 let initialized = false;
@@ -165,8 +165,8 @@ function buildIndex(data) {
       newItemRowIdx.push(i);
       newNameIndex.push(normalizeName(newReader.name(row)));
     } else if (type === ROW_TYPE.PRICE) {
-      const store = newReader.store(row);
-      if (store) newPriceIndex.set(priceKey(store, jan), i);
+      // 店舗欄は同じ価格の店舗を「7711|7719」のようにまとめているので、店舗ごとに登録する
+      for (const store of newReader.stores(row)) newPriceIndex.set(priceKey(store, jan), i);
     }
   }
 

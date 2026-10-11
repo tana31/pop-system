@@ -5,19 +5,20 @@
  * スキャン画面（scan-app.js、手入力の JAN）は normalizeJan などの正規化だけを使う。
  * 画面側（スキャン画面・プレビュー画面）は列名を知らず、変換済みの商品データだけを扱う。
  *
- * マスタは軽量化バッチ（pop-master-batch.ps1）が作る次の形の CSV で、/api/master が
- * { version, headers, rows } に変換して返す:
+ * マスタは軽量化バッチ（pop-master-batch.ps1）が作る次の形の CSV で、/api/master がそのまま返す
+ * （解析は master-worker.js が行う）:
  *   type,jan,store,taxRate,priceExcl,price,maker,name,qty1,qty2,comment,risk
- *   I 行 … 1商品1行。共通項目と標準価格（store は空）
- *   P 行 … 標準価格と違う店舗だけの例外価格（jan・store・priceExcl・price だけが入る）
+ *   I 行 … 1商品1行。共通項目と標準価格（store は空。標準価格が無い商品は priceExcl・price も空）
+ *   P 行 … 標準価格と違う店舗の価格（jan・store・priceExcl・price だけが入る）。
+ *          同じ価格の店舗は store に「7711|7719」のように | 区切りでまとめる
  * 列の並びが変わっても見出しの名前で探すので動く。列名を変えるときはバッチ・Worker（index.js の
  * MASTER_HEADER）・このファイルの COLUMNS を揃えて変える。
  *
  * 商品データの形（画面に渡す・印刷キューに保存する形）:
  *   {
  *     jan: string,        // 正規化済み（全角→半角、空白・ハイフン除去）
- *     name, maker, comment, qty1, qty2, risk: string,  // risk は「通常商品」なら空
- *     priceExcl: number,  // 税抜価格（店舗の例外価格があればそちら）
+ *     name, maker, comment, qty1, qty2, risk: string,  // risk は医薬品以外なら空（バッチが空にして送る）
+ *     priceExcl: number,  // 税抜価格（店舗の価格があればそちら。どちらも無ければ 0）
  *     price: number,      // 税込価格（同上）
  *     taxRate: number|null // 税率（%）。null なら修正フォームで税込を自動計算しない
  *   }
@@ -46,9 +47,6 @@ export const ROW_TYPE = { ITEM: 'I', PRICE: 'P' };
 // 必須列（1つでも無ければマスタの形式が違うとみなす）
 export const REQUIRED_KEYS = Object.keys(COLUMNS);
 
-// POP に表示しない医薬品区分の値（医薬品以外の商品）
-export const HIDDEN_RISK_LABELS = ['通常商品'];
-
 /** JAN: 全角数字→半角、空白・ハイフン除去 */
 export function normalizeJan(value) {
   return String(value ?? '').normalize('NFKC').replace(/[\s-]/g, '');
@@ -58,6 +56,9 @@ export function normalizeJan(value) {
 export function normalizeStore(value) {
   return String(value ?? '').normalize('NFKC').replace(/\s/g, '');
 }
+
+// P 行の店舗欄で店舗を区切る文字
+const STORE_SEPARATOR = '|';
 
 /** 価格: 「1,000」「¥1000」「１０００円」なども数値に変換（変換できなければ 0） */
 export function parsePrice(value) {
@@ -97,16 +98,17 @@ export function createRowReader(headers) {
   return {
     type:  row => read(row, 'type'),
     jan:   row => normalizeJan(read(row, 'jan')),
-    store: row => normalizeStore(read(row, 'store')),
+    /** P 行の店舗欄を店舗番号の配列にする（「7711|7719」→ ['7711', '7719']） */
+    stores: row => read(row, 'store').split(STORE_SEPARATOR).map(normalizeStore).filter(Boolean),
     name:  row => read(row, 'name'),
 
     /**
      * 商品行（I 行）を商品データに変換する。
-     * priceRow に店舗の例外価格行（P 行）を渡すと、価格だけそちらを使う
+     * priceRow に店舗の価格行（P 行）を渡すと、価格だけそちらを使う。
+     * 標準価格が空で priceRow も無ければ 0 円（parsePrice が空を 0 にする）
      */
     toItem(row, priceRow = null) {
       const p = priceRow || row;
-      const risk = read(row, 'risk');
       return {
         jan:       normalizeJan(read(row, 'jan')),
         name:      read(row, 'name'),
@@ -117,7 +119,7 @@ export function createRowReader(headers) {
         comment:   read(row, 'comment'),
         qty1:      read(row, 'qty1'),
         qty2:      read(row, 'qty2'),
-        risk:      HIDDEN_RISK_LABELS.includes(risk) ? '' : risk
+        risk:      read(row, 'risk')
       };
     }
   };

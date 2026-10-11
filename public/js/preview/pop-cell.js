@@ -6,6 +6,7 @@
  */
 import { applyThemeColors, themeImageUrls } from './themes.js';
 import { createBarcodeElement } from './barcode.js';
+import { displayRisk } from '../shared/risk.js';
 
 /** POPセルを生成 */
 export function createPopCell(conf, item, theme) {
@@ -32,13 +33,13 @@ export function createPopCell(conf, item, theme) {
 
   // POP の最下部に 税込価格（通常の価格のときだけ）・JAN バーコードと数字・医薬品リスク区分 を入れる。
   // 並べ方はサイズごとに CSS（--pop-bottom-areas）で決める。
-  // リスク区分が未記入でも要素は作る。バーコードを印字しない商品も、空の要素で場所だけ空けておく
+  // リスク区分が未記入・「通常商品」（修正フォームや CSV で入力されたもの）でも、空の要素は作る。バーコードを印字しない商品も、空の要素で場所だけ空けておく
   // （価格の位置を他の POP とそろえる）
   const bottom = cell.querySelector('.pop-bottom');
   const barcode = createBarcodeElement(item.noBarcode ? '' : item.jan);
   const risk = document.createElement('div');
   risk.className = 'pop-risk-tag';
-  risk.textContent = item.risk ?? '';
+  risk.textContent = displayRisk(item.risk);
   bottom.append(barcode, risk);
 
   const image = themeImageUrls(theme, conf.key);
