@@ -38,8 +38,8 @@
 .pop-cell {
   box-sizing: border-box;
   border: var(--pop-border-width) var(--pop-border-style) var(--pop-border-color);
-  font-family: var(--pop-font-sans);
   background-color: var(--pop-bg-standard);
+  font-family: "Noto Sans JP", "BIZ UDPGothic", "Meiryo", sans-serif;
   width: 100%;
   height: 100%;
   overflow: hidden;

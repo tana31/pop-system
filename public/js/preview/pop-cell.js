@@ -119,6 +119,12 @@ function yen(value) {
   return (Number(value) || 0).toLocaleString();
 }
 
+/** 医薬品リスク区分の表示用の文字。未記入・「通常商品」は表示しない（空文字） */
+function displayRisk(value) {
+  const risk = String(value ?? '').trim();
+  return risk === '通常商品' ? '' : risk;
+}
+
 /**
  * 税抜価格が「税抜」の文字と並んで1行に入り切らない場合（桁の多い価格・ミックスマッチで欄が狭いときなど）は、
  * 価格の数字だけを縮めて1行に収める（「税抜」と「円」は縮めない）。最小で元の50%（ミックスマッチは35%）。
