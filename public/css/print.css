@@ -61,4 +61,11 @@
   .a4-page:last-child {
     break-after: auto;
   }
+
+  /* ミシン目の点線（POP の枠線）は印刷しない。
+     線の太さは残して色だけ透明にするので、点線の有無で POP の中身の位置は変わらない。
+     テストで点線も印刷したいときは preview.html?cutlines で開く（preview-app.js が show-cut-lines を付ける） */
+  body:not(.show-cut-lines) .pop-cell {
+    --pop-border-color: transparent;
+  }
 }

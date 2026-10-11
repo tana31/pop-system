@@ -7,6 +7,7 @@
  *
  * 「印刷・PDF保存」はブラウザの印刷機能を使う（用紙・余白は css/print.css の @page で決める）。
  * 文字もバーコードもベクターのまま PDF になる。「PDFを直接ダウンロード（旧）」は画像化する以前の方式。
+ * ミシン目の点線は印刷しない。URL に ?cutlines を付けて開いたときだけ印刷する（テスト用）。
  */
 import { SIZE_CONFIGS, MIXED_GRID } from '../shared/pop-sizes.js';
 import { loadQueue, countTotalPops } from '../shared/print-queue.js';
@@ -29,6 +30,11 @@ const queue = loadQueue();
 const totalPops = countTotalPops(queue);
 let themes = [];
 let themeWarning = '';   // テーマを取得できなかったときの文言（集計の代わりに出し続ける）
+
+// テスト用: preview.html?cutlines で開くと、ミシン目の点線も印刷する（css/print.css を参照）
+if (new URLSearchParams(location.search).has('cutlines')) {
+  document.body.classList.add('show-cut-lines');
+}
 
 init();
 
