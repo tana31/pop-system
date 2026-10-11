@@ -14,7 +14,7 @@
  * 白い帯の下に一覧で知らせる（renderCommentAlert）。
  */
 import { SIZE_CONFIGS, MIXED_GRID, commentHiddenSizes } from '../shared/pop-sizes.js';
-import { loadQueue, countTotalPops } from '../shared/print-queue.js';
+import { loadQueue, countTotalPops, toCount } from '../shared/print-queue.js';
 import { fetchThemes, themeHasImage } from './themes.js';
 import { buildSeparatedPages, buildMixedPages } from './imposition.js';
 import { renderPage, renderEmptyState } from './page-render.js';
@@ -106,18 +106,32 @@ function render() {
 }
 
 /**
- * 選んだデザイン（CSV でデザインIDを指定した商品はそのデザイン）で、コメントが長いため表示されない POP がある商品を一覧にする。
+ * 選んだデザイン（CSV でデザインIDを指定した商品はそのデザイン）で、コメントが長いため表示されない POP を一覧にする。
+ * 商品の件数だけだと、画像なしでも表示されない商品ばかりのときにデザインを変えても数が変わらないので、
+ * 表示されない POP の枚数と、そのうち「画像があるために表示されない」枚数を出す。
  * 一覧は閉じた状態で出し、開いた・閉じたはデザインを変えても保つ
  */
 function renderCommentAlert(getTheme) {
   const rows = [];
+  let hiddenPops = 0;
+  let imagePops = 0;   // 画像のないデザインなら表示される枚数
   for (const q of queue) {
-    const hidden = commentHiddenSizes(q.item.comment, q.counts, themeHasImage(getTheme(q.item)));
-    if (hidden.length) rows.push({ name: q.item.name || '（商品名なし）', comment: q.item.comment, sizes: hidden.map(c => c.label).join('・') });
+    const hasImage = themeHasImage(getTheme(q.item));
+    const hidden = commentHiddenSizes(q.item.comment, q.counts, hasImage);
+    if (!hidden.length) continue;
+    const always = new Set(commentHiddenSizes(q.item.comment, q.counts, false).map(c => c.key));
+    const sizes = hidden.map(c => {
+      const n = toCount(q.counts[c.key]);
+      hiddenPops += n;
+      if (!always.has(c.key)) imagePops += n;
+      return `${c.label} ${n}枚${always.has(c.key) ? '' : '（画像のため）'}`;
+    });
+    rows.push({ name: q.item.name || '（商品名なし）', comment: q.item.comment, sizes: sizes.join('・') });
   }
   commentAlert.classList.toggle('hidden', rows.length === 0);
   if (rows.length === 0) return;
-  commentAlertSummary.textContent = `${rows.length}件の商品で、このデザインではコメントが長いため表示されない POP があります`;
+  const imageNote = imagePops ? `。うち ${imagePops}枚は画像のないデザインなら表示されます` : '';
+  commentAlertSummary.textContent = `コメントが長いため表示されない POP が ${hiddenPops}枚あります（${rows.length}商品${imageNote}）`;
   commentAlertList.innerHTML = rows.map(r => `
     <li><span class="comment-alert__name">${escapeAttr(r.name)}</span>
       <span class="comment-alert__sizes">${escapeAttr(r.sizes)}</span>
