@@ -14,9 +14,10 @@
 
   --pop-bg-standard: #ffffff;
 
-  /* 全サイズ共通の最低余白（上下左右）。プリンターの印刷できない範囲（用紙の端から約4mm）に
-     文字や価格が掛からないようにする。サイズ別の余白がこれより大きい場合はそちらを使う */
-  --pop-safe-margin: 4mm;
+  /* 全サイズ共通の最低余白（上下左右）。プリンターの印刷できない範囲（用紙の端から約4mm。
+     実機では 4mm だと見切れたため 5mm にしている）に文字や価格が掛からないようにする。
+     サイズ別の余白がこれより大きい場合はそちらを使う */
+  --pop-safe-margin: 5mm;
 }
 
 /* A4 用紙スタイル (ミシン目にピッタリ合わせるため外枠余白0) */
@@ -68,6 +69,10 @@
   flex-direction: column;
   justify-content: space-between;
 }
+/* 中の要素は縮めない（入り切らないときに文字が重なるのを防ぐ。入り切るかは文字サイズで調整する） */
+.pop-content > * {
+  flex-shrink: 0;
+}
 
 /* --- 画像エリア（上部/左部共通の基本スタイル） --- */
 .pop-image-container {
@@ -95,6 +100,40 @@
   flex: 0 0 var(--pop-img-w, 32%);
   height: 100%;
 }
+
+/* A9タテ以外は、画像の縦横比を崩して欄いっぱいに伸ばす（画像の高さ＝商品情報の高さ） */
+.pop-layout-left .pop-image-container img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
+}
+
+/* 医薬品区分を画像の下に置くサイズ（pop-sizes.js の riskUnderImage: true。画像があるときだけ）。
+   上段に「画像｜商品情報」、最下段（.pop-foot）に「バーコード（左寄せ）｜医薬品区分（右寄せ）」を置く。
+   画像は上段の高さいっぱいに伸びるので、画像の高さと商品情報（コメント〜税込価格）の高さがそろう */
+.pop-cell.pop-has-foot {
+  display: grid;
+  grid-template-columns: var(--pop-img-w, 32%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas: "img content" "foot foot";
+  column-gap: var(--pop-gap, 2mm);
+  row-gap: var(--pop-foot-gap, 0.6mm);
+}
+.pop-has-foot > .pop-image-container { grid-area: img; width: 100%; height: 100%; }
+.pop-has-foot > .pop-content { grid-area: content; }
+.pop-foot {
+  grid-area: foot;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1mm;
+  min-width: 0;
+}
+.pop-foot .pop-risk-tag { flex: 1 1 auto; }
+.pop-foot .pop-barcode  { flex: 0 0 auto; order: -1; }  /* DOM では医薬品区分が先なので、並びだけ入れ替える */
 
 /* --- 1カラム構成 要素スタイル（詰めた行間設定） --- */
 
@@ -128,20 +167,21 @@
   font-weight: 900;
   color: var(--pop-text-main);
   line-height: 1.1;
+  letter-spacing: -0.03em;
   margin: 0.3mm 0;
   /* 2行で打ち切り（-webkit-line-clamp は html2canvas 非対応のため高さで制限） */
   max-height: calc(var(--pop-name-size) * 1.1 * 2);
   overflow: hidden;
 }
 
-/* 4 & 5. 数量1・数量2 */
+/* 4 & 5. 数量1・数量2（縦に並べる。数量2が空欄ならその行の高さは0） */
 .pop-qty-group {
   font-size: var(--pop-qty-size);
   font-weight: 600;
   color: #475569;
   line-height: 1.05;
   display: flex;
-  gap: 2px;
+  flex-direction: column;
 }
 
 .pop-qty {
@@ -150,98 +190,74 @@
   white-space: nowrap;
 }
 
-/* 6. 税抜き価格コンテナ（●税抜 ＋ ドカンと大文字価格 横並び） */
-.pop-tax-excl-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2px;
+/* 6. 価格（税抜）
+   「税抜」の文字（赤・背景なし）＋ 大きな価格 ＋「円」を1行に並べ、右に寄せる。
+   行の文字サイズを --pop-price-size にし、「税抜」やバッジは em（価格に対する比率）で決める。
+   右寄せは justify-content ではなく「税抜」側の margin-left: auto で行う
+   （入り切らないときに右へはみ出させ、fitPopText が scrollWidth ではみ出し幅を測れるようにするため） */
+.pop-price {
   margin-top: auto;
   width: 100%;
 }
 
-/* 黒丸白文字「税抜」バッジ */
-.pop-tax-badge-black {
-  background-color: #000000;
-  color: #ffffff;
-  border-radius: 9999px;
-  padding: 1px 5px;
-  font-size: var(--pop-badge-size);
-  font-weight: 800;
-  white-space: nowrap;
-  line-height: 1.1;
-}
-
-/* 税抜き価格 */
-.pop-price-excl {
+.pop-price-row {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  min-width: 0;
   font-size: var(--pop-price-size);
-  font-weight: 900;
-  line-height: 0.9;
-  letter-spacing: -1px;
-  white-space: nowrap;
-  text-align: right;
   color: var(--pop-color-price-red);
+  white-space: nowrap;
 }
 
-/* 「円」の文字サイズは税抜・税込で共通（未指定なら税込価格と同じ大きさ） */
-.pop-price-excl .unit {
-  font-size: var(--pop-yen-size, var(--pop-tax-incl-size));
-  font-weight: 800;
-  margin-left: 1px;
-  letter-spacing: normal;
-}
-
-.pop-tax-incl .unit {
-  font-size: var(--pop-yen-size, var(--pop-tax-incl-size));
-}
-
-/* 6'. ミックスマッチ（A8ヨコ以上）: 上に「1個」の価格を1行で小さく、下に「◯個」の価格を大きく */
-.pop-mix {
+/* 「税抜」の欄。価格の左に置く */
+.pop-price-label {
+  margin-left: auto;
+  margin-right: 0.06em;
   display: flex;
   flex-direction: column;
-  margin-top: auto;
-  width: 100%;
-}
-.pop-mix-single {
-  font-size: var(--pop-mix-single-size, calc(var(--pop-tax-incl-size) * 0.75));
-  font-weight: 800;
-  line-height: 1.1;
-  color: var(--pop-text-main);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding-bottom: var(--pop-mix-single-gap, 0.6mm);
-  margin-bottom: var(--pop-mix-single-gap, 0.6mm);
-  border-bottom: 0.5pt dashed var(--pop-text-sub);
-}
-.pop-mix .pop-tax-excl-container { margin-top: 0; }
-/* 「◯個」と「税抜」をひとまとめにする（「税抜」は背景なしの黒文字） */
-.pop-mix-label {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.15em;
+  align-items: flex-start;
+  gap: 0.04em;
+  padding-bottom: 0.07em;   /* 「税抜」の下端を数字の下端にそろえる */
   flex: 0 0 auto;
-  color: var(--pop-text-main);
-  white-space: nowrap;
+}
+.pop-price-tax {
+  /* 価格を小さくしても（ミックスマッチの「1個」など）読める大きさは残す */
+  font-size: max(var(--pop-price-label-ratio, 0.3em), var(--pop-price-label-min, 6.5px));
+  font-weight: 900;
   line-height: 1;
 }
-.pop-mix-qty {
-  font-size: var(--pop-mix-qty-size, calc(var(--pop-badge-size) * 1.7));
+
+/* 税抜価格（数字）。fitPopText はこの要素の文字だけを縮める */
+.pop-price-excl {
+  font-size: 1em;
   font-weight: 900;
-}
-.pop-mix-tax-label {
-  font-size: var(--pop-mix-tax-label-size, calc(var(--pop-badge-size) * 1.2));
-  font-weight: 800;
+  line-height: 0.82;
+  letter-spacing: -0.02em;
+  flex: 0 0 auto;
 }
 
-/* 7. 区切り線 */
+/* 「円」の文字サイズは税抜・税込で共通（未指定なら税込価格の 0.85 倍） */
+.pop-price-row .unit,
+.pop-tax-incl .unit {
+  font-size: var(--pop-yen-size, calc(var(--pop-tax-incl-size) * 0.85));
+  font-weight: 800;
+  line-height: 1;
+}
+.pop-price-row .unit {
+  margin-left: 0.04em;
+  padding-bottom: 0.04em;
+  flex: 0 0 auto;
+}
+
+/* 7. 区切り線（価格の真下に引く赤い線） */
 .pop-divider {
-  border-bottom: 0.8pt solid var(--pop-text-main);
+  border-bottom: var(--pop-divider-w, 0.8pt) solid var(--pop-color-price-red);
   margin: var(--pop-divider-mt, 0.5mm) 0 var(--pop-divider-mb, 0.3mm) 0;
   width: 100%;
 }
 
-/* 8. 税込み価格（右寄せ） */
+/* 8. 税込み価格（右寄せ。「税込」の文字は数字より小さく） */
 .pop-tax-incl {
   font-size: var(--pop-tax-incl-size);
   font-weight: 800;
@@ -249,32 +265,94 @@
   line-height: var(--pop-tax-incl-lh, 1.05);
   text-align: right;
   white-space: nowrap;
-  width: 100%;
+}
+.pop-tax-incl .label {
+  font-size: 0.72em;
+  margin-right: 0.3em;
 }
 
-/* 9. 医薬品リスク区分 */
+/* 6'. ミックスマッチ（A8ヨコ以上）
+   「1個」と「◯個」の価格を左右に並べる。それぞれ「◯個」の赤いバッジ・税抜価格・赤い線・税込価格を持つ。
+   目玉の「◯個」は通常の価格の --pop-mix-ratio 倍（既定 1 倍）、「1個」はさらに --pop-mix-single-ratio 倍（既定 0.55）
+   にしてメリハリを付ける。欄の幅も「◯個」に多く配る（1個:◯個 = 0.6:1）。
+   価格を2つ並べると欄が狭くなるサイズ（A8ヨコ・A6ヨコ以上）は --pop-mix-ratio を下げ、「税抜」やバッジもいっしょに縮める */
+.pop-mix {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--pop-mix-gap, 2mm);
+}
+.pop-mix-block {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.pop-mix-block.is-single { flex-grow: var(--pop-mix-single-grow, 0.6); }
+.pop-mix-block .pop-price-row {
+  font-size: calc(var(--pop-price-size) * var(--pop-mix-ratio, 1));
+}
+.pop-mix-block.is-single .pop-price-row {
+  font-size: calc(var(--pop-price-size) * var(--pop-mix-ratio, 1) * var(--pop-mix-single-ratio, 0.55));
+}
+
+/* 「◯個」の赤いバッジ（白抜き文字） */
+/* 「◯個」の赤い楕円バッジ（白抜き文字）。価格の行の左端（欄の左端）に置き、上下は数字の中央にそろえる。
+   右側の「税抜・価格・円」とは auto マージンで離す（入り切らないときはマージンが 0 になり右へはみ出すので、
+   fitPopText が価格を縮めて収める）。文字サイズは価格の行に対する比率なので、「1個」は「◯個」より小さくなる */
+.pop-mix-badge {
+  align-self: center;
+  margin-right: auto;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  padding: 0.16em 0.55em 0.12em;
+  font-weight: 900;
+  line-height: 1;
+  color: #ffffff;
+  background-color: var(--pop-color-price-red);
+  white-space: nowrap;
+}
+.pop-mix .pop-price-label { margin-left: 0.3em; }
+.is-bundle .pop-mix-badge { font-size: var(--pop-mix-badge-size, 0.4em); }
+.is-single .pop-mix-badge { font-size: var(--pop-mix-single-badge-size, 0.42em); }
+
+/* POP の最下部（税込価格・JANバーコード・医薬品区分）。
+   並べ方はサイズごとに grid-template-areas で決める（下の「サイズ別」を参照）。
+   既定は「医薬品区分（左寄せ）｜税込（右寄せ）」の行の下に、バーコード（中央寄せ）を置く。
+   同じ行の要素は上下中央にそろえる。
+   ミックスマッチでは税込価格がそれぞれの価格の下にあるため、ここには入らない */
+.pop-bottom {
+  display: grid;
+  grid-template-areas: var(--pop-bottom-areas, "risk incl" "code code");
+  grid-template-columns: var(--pop-bottom-cols, 1fr auto);
+  align-items: center;
+  width: 100%;
+}
+.pop-bottom .pop-tax-incl { grid-area: incl; justify-self: end; }
+.pop-bottom .pop-barcode  { grid-area: code; justify-self: var(--pop-barcode-justify, center); }
+.pop-bottom .pop-risk-tag { grid-area: risk; }
+
+/* 9. 医薬品リスク区分（入り切らなければ2行まで折り返す） */
 .pop-risk-tag {
   font-size: var(--pop-risk-size);
   font-weight: 800;
   color: var(--pop-color-risk-text);
-  text-align: left;
-  line-height: 1.0;
-  margin-top: 0.3mm;
-  white-space: nowrap;
+  text-align: var(--pop-risk-align, left);
+  line-height: 1.1;
+  max-height: calc(var(--pop-risk-size) * 1.1 * 2);
   overflow: hidden;
-  text-overflow: ellipsis;
-  width: 100%;
-  padding: var(--pop-risk-pad, 0.3mm) 0;
-  min-height: calc(var(--pop-risk-size) + var(--pop-risk-pad, 0.3mm) * 2);
+  word-break: break-all;
+  min-width: 0;
+  padding-inline: 0.5mm;
 }
 
 /* 10. JANバーコード
    --pop-barcode-w: バーコード本体（95モジュール）の幅。JAN規格の最小倍率 0.8 倍（約25.1mm）以上にする
-   左右の余白（クワイエットゾーン: 左11・右7モジュール）を含めた全体が、欄の幅に収まらない場合は
+   --pop-barcode-h: 線の高さ。規格よりかなり低い短縮寸法（3〜5mm）。横にかざす読み方なら読めるが、
+                    斜めにかざすと読み取りにくくなる
+   左右の余白（クワイエットゾーン: 左11・右7モジュール）を含めた全体が欄の幅に収まらない場合は
    全体を縮めて収める（線が途中で切れて読めなくなるのを防ぐ） */
+.pop-cell {
+  --pop-barcode-total: calc(var(--pop-barcode-w, 30mm) * 113 / 95);
+}
 .pop-barcode {
-  flex: 0 0 auto;
-  align-self: center;
   margin-top: var(--pop-barcode-gap, 0.8mm);
   background: #ffffff;
   text-align: center;
@@ -285,12 +363,12 @@
 .pop-barcode {
   margin-inline: calc(var(--pop-barcode-bleed, 0mm) * -1);
 }
-.pop-barcode.is-ean13 { width: min(calc(var(--pop-barcode-w, 30mm) * 113 / 95), calc(100% + var(--pop-barcode-bleed, 0mm) * 2)); }
+.pop-barcode.is-ean13 { width: min(var(--pop-barcode-total), calc(100% + var(--pop-barcode-bleed, 0mm) * 2)); }
 .pop-barcode.is-ean8  { width: min(calc(var(--pop-barcode-w, 30mm) * 81 / 95), calc(100% + var(--pop-barcode-bleed, 0mm) * 2)); }
 
 .pop-barcode-bars {
   display: block;
-  height: var(--pop-barcode-h, 6mm);
+  height: var(--pop-barcode-h, 4mm);
   fill: #000000;
 }
 .is-ean13 .pop-barcode-bars { width: calc(100% * 95 / 113); margin-left: calc(100% * 11 / 113); }
@@ -305,7 +383,7 @@
   white-space: nowrap;
 }
 /* バーコードにできないJAN（桁数違い・チェックデジット誤り等）は数字だけ。高さはそろえて価格の位置がずれないようにする */
-.pop-barcode.is-text-only { padding: var(--pop-barcode-h, 6mm) 0.5mm 0; }
+.pop-barcode.is-text-only { padding: var(--pop-barcode-h, 4mm) 0.5mm 0; }
 /* JAN の無い商品・「JANを印字しない」商品は何も見せず、場所だけ残す（価格の位置を他の POP とそろえる）。
    場所も詰めたい場合は visibility: hidden を display: none に変える */
 .pop-barcode.is-empty { visibility: hidden; }
@@ -315,142 +393,172 @@
    A8ヨコを基準に、用紙の相似比で拡大（A6ヨコ=2倍、A5ヨコ=約2.83倍、A4ヨコ=4倍）。
    A9タテ（縦長・画像が上）と A6ハーフ（高さはA8と同じ）は個別に調整。
    バーコード寸法は読み取りやすさで決めているため、文字と一緒には拡大しない
+
+   最下部の並べ方（--pop-bottom-areas）
+     A9タテ・A6ヨコ以上 : 医薬品区分｜税込 の下に バーコード（中央寄せ）
+     A8ヨコ・A6ハーフ   : 税込（右寄せ） の下に バーコード（左寄せ）｜医薬品区分（右寄せ）。
+                          画像がある場合は、この2つを POP の最下段へ出す（pop-sizes.js の riskUnderImage）
    ========================================================================== */
 
-/* A9タテ (37.125mm × 52.5mm: 1/32面) */
+/* A9タテ (37.125mm × 52.5mm: 1/32面)。ミックスマッチは表示しない（pop-sizes.js の mixMatch: false） */
 .pop-size-a9 {
-  --pop-barcode-w: 26mm;
+  --pop-barcode-w: 25.2mm;
   --pop-barcode-bleed: 1.5mm;
-  --pop-barcode-h: 5mm;
+  --pop-barcode-h: 3mm;
   --pop-barcode-text-size: 6px;
-  --pop-barcode-gap: 1mm;
+  --pop-barcode-gap: 0.6mm;
   --pop-img-max-h: 7mm;
-  --pop-comment-size: 8px;
-  --pop-maker-size: 8px;
-  --pop-name-size: 12.5px;
-  --pop-qty-size: 8px;
-  --pop-badge-size: 8.5px;
-  --pop-price-size: 26px;
-  --pop-tax-incl-size: 12px;
-  --pop-tax-incl-lh: 1.1;
-  --pop-divider-mt: 1mm;
-  --pop-divider-mb: 0.8mm;
+  --pop-comment-size: 11px;
+  --pop-maker-size: 7.5px;
+  --pop-name-size: 12px;
+  --pop-qty-size: 7.5px;
+  --pop-price-size: 34px;
+  --pop-tax-incl-size: 10.5px;
+  --pop-divider-mt: 0.6mm;
+  --pop-divider-mb: 0.5mm;
   --pop-risk-size: 6px;
-  --pop-risk-pad: 0mm;
 }
 
 /* A8ヨコ (74.25mm × 52.5mm: 1/16面) … 基準 */
 .pop-size-a8 {
-  --pop-barcode-w: 28mm;
-  --pop-barcode-h: 5.5mm;
-  --pop-barcode-text-size: 6.5px;
-  --pop-barcode-gap: 1.2mm;
-  --pop-img-w: 34%;
+  --pop-barcode-w: 25.2mm;
+  --pop-barcode-h: 3mm;
+  --pop-barcode-text-size: 6px;
+  --pop-barcode-gap: 0.4mm;
+  --pop-img-w: 22mm;
   --pop-gap: 2mm;
-  --pop-comment-size: 9px;
+  --pop-bottom-areas: "incl incl" "code risk";
+  --pop-barcode-justify: start;
+  --pop-bottom-cols: var(--pop-barcode-total) 1fr;
+  --pop-risk-align: right;
+  --pop-mix-gap: 1.5mm;
+  --pop-mix-ratio: 0.66;
+  --pop-mix-badge-size: 12.5px;
+  --pop-mix-single-badge-size: 10px;
+  --pop-comment-size: 13.5px;
   --pop-maker-size: 8px;
-  --pop-name-size: 13px;
+  --pop-name-size: 15.5px;
   --pop-qty-size: 8px;
-  --pop-badge-size: 9px;
-  --pop-price-size: 36px;
-  --pop-tax-incl-size: 15px;
-  --pop-tax-incl-lh: 1.1;
-  --pop-divider-mt: 1.2mm;
-  --pop-divider-mb: 1mm;
-  --pop-risk-size: 7.5px;
-  --pop-risk-pad: 0mm;
+  --pop-price-size: 48px;
+  --pop-tax-incl-size: 12.5px;
+  --pop-divider-mt: 0.6mm;
+  --pop-divider-mb: 0.4mm;
+  --pop-risk-size: 7px;
 }
 
-/* A6ハーフ (148.5mm × 52.5mm: 1/8面) … 高さはA8と同じなので文字はA8並み、横幅の余裕で価格を大きく */
+/* A8ヨコ・A6ヨコのミックスマッチは横幅が足りないため、バッジを価格の左に並べず、現行 POP と同じく価格の左上（行の上）に置く。
+   バッジは欄の左上に重ね、その高さぶんだけ価格を下げる（バッジの文字サイズはサイズ別に px で指定する） */
+.pop-size-a8 .pop-mix-block,
+.pop-size-a6 .pop-mix-block {
+  position: relative;
+  padding-top: calc(var(--pop-mix-badge-size) * 1.3);
+}
+.pop-size-a8 .pop-mix-badge,
+.pop-size-a6 .pop-mix-badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+/* バッジを行から外したので、「税抜・価格・円」はこちらの auto マージンで右に寄せる */
+.pop-size-a8 .pop-mix .pop-price-label,
+.pop-size-a6 .pop-mix .pop-price-label {
+  margin-left: auto;
+}
+
+/* A6ハーフ (148.5mm × 52.5mm: 1/8面) … 高さはA8と同じ。画像はA8と同じ幅、横幅の余裕で価格だけ A8 より少し大きく */
 .pop-size-a6half {
-  --pop-barcode-w: 30mm;
-  --pop-barcode-h: 6mm;
-  --pop-barcode-text-size: 7px;
-  --pop-barcode-gap: 1mm;
-  --pop-img-w: 30%;
-  --pop-gap: 3mm;
-  --pop-comment-size: 9px;
+  --pop-bottom-areas: "incl incl" "code risk";
+  --pop-barcode-justify: start;
+  --pop-bottom-cols: var(--pop-barcode-total) 1fr;
+  --pop-risk-align: right;
+  --pop-barcode-w: 26mm;
+  --pop-barcode-h: 3mm;
+  --pop-barcode-text-size: 6.5px;
+  --pop-barcode-gap: 0.4mm;
+  --pop-img-w: 22mm;
+  --pop-gap: 2.5mm;
+  --pop-mix-gap: 4mm;
+  --pop-comment-size: 14px;
   --pop-maker-size: 8px;
-  --pop-name-size: 13px;
+  --pop-name-size: 15.5px;
   --pop-qty-size: 8px;
-  --pop-badge-size: 9px;
-  --pop-price-size: 40px;
-  --pop-tax-incl-size: 16px;
-  --pop-tax-incl-lh: 1.1;
-  --pop-divider-mt: 1mm;
-  --pop-divider-mb: 0.8mm;
+  --pop-price-size: 54px;
+  --pop-tax-incl-size: 13px;
+  --pop-divider-mt: 0.6mm;
+  --pop-divider-mb: 0.4mm;
   --pop-risk-size: 7.5px;
-  --pop-risk-pad: 0mm;
 }
 
-/* A6ヨコ (148.5mm × 105mm: 1/4面) … A8の2倍 */
+/* A6ヨコ (148.5mm × 105mm: 1/4面) … A8の2倍（最下部は1行） */
 .pop-size-a6 {
-  --pop-barcode-w: 36mm;
-  --pop-barcode-h: 9mm;
-  --pop-barcode-text-size: 9px;
-  --pop-barcode-gap: 2mm;
+  --pop-barcode-w: 30mm;
+  --pop-barcode-h: 4mm;
+  --pop-barcode-text-size: 8px;
+  --pop-barcode-gap: 0.8mm;
   --pop-pad-y: 4mm;
   --pop-pad-x: 5mm;
-  --pop-img-w: 32%;
+  --pop-img-w: 34%;
   --pop-gap: 3.5mm;
-  --pop-comment-size: 18px;
+  --pop-mix-gap: 5mm;
+  --pop-mix-ratio: 0.7;
+  --pop-mix-badge-size: 20px;
+  --pop-mix-single-badge-size: 15px;
+  --pop-divider-w: 1.2pt;
+  --pop-comment-size: 27px;
   --pop-maker-size: 16px;
-  --pop-name-size: 26px;
+  --pop-name-size: 31px;
   --pop-qty-size: 16px;
-  --pop-badge-size: 18px;
-  --pop-price-size: 72px;
-  --pop-tax-incl-size: 30px;
-  --pop-tax-incl-lh: 1.1;
-  --pop-divider-mt: 2.4mm;
-  --pop-divider-mb: 2mm;
-  --pop-risk-size: 15px;
-  --pop-risk-pad: 0mm;
+  --pop-price-size: 96px;
+  --pop-tax-incl-size: 25px;
+  --pop-divider-mt: 1.2mm;
+  --pop-divider-mb: 0.8mm;
+  --pop-risk-size: 13px;
 }
 
 /* A5ヨコ (210mm × 148.5mm: 1/2面) … A8の約2.83倍 */
 .pop-size-a5 {
-  --pop-barcode-w: 40mm;
-  --pop-barcode-h: 11mm;
-  --pop-barcode-text-size: 10px;
-  --pop-barcode-gap: 2.5mm;
+  --pop-barcode-w: 34mm;
+  --pop-barcode-h: 4.5mm;
+  --pop-barcode-text-size: 9px;
+  --pop-barcode-gap: 1mm;
   --pop-pad-y: 5mm;
   --pop-pad-x: 7mm;
-  --pop-img-w: 30%;
+  --pop-img-w: 32%;
   --pop-gap: 4mm;
-  --pop-comment-size: 25px;
+  --pop-mix-gap: 7mm;
+  --pop-mix-ratio: 0.65;
+  --pop-divider-w: 1.6pt;
+  --pop-comment-size: 35px;
   --pop-maker-size: 23px;
-  --pop-name-size: 37px;
+  --pop-name-size: 40px;
   --pop-qty-size: 23px;
-  --pop-badge-size: 25px;
-  --pop-price-size: 100px;
-  --pop-tax-incl-size: 42px;
-  --pop-tax-incl-lh: 1.1;
-  --pop-divider-mt: 3.4mm;
-  --pop-divider-mb: 2.8mm;
-  --pop-risk-size: 21px;
-  --pop-risk-pad: 0mm;
+  --pop-price-size: 136px;
+  --pop-tax-incl-size: 35px;
+  --pop-divider-mt: 1.7mm;
+  --pop-divider-mb: 1.1mm;
+  --pop-risk-size: 18px;
 }
 
 /* A4ヨコ (297mm × 210mm: 1/1面) … A8の4倍 */
 .pop-size-a4 {
-  --pop-barcode-w: 50mm;
-  --pop-barcode-h: 15mm;
-  --pop-barcode-text-size: 12px;
-  --pop-barcode-gap: 3mm;
+  --pop-barcode-w: 40mm;
+  --pop-barcode-h: 5mm;
+  --pop-barcode-text-size: 11px;
+  --pop-barcode-gap: 1.5mm;
   --pop-pad-y: 8mm;
   --pop-pad-x: 10mm;
-  --pop-img-w: 28%;
+  --pop-img-w: 30%;
   --pop-gap: 5mm;
-  --pop-comment-size: 36px;
+  --pop-mix-gap: 10mm;
+  --pop-mix-ratio: 0.65;
+  --pop-divider-w: 2.2pt;
+  --pop-comment-size: 54px;
   --pop-maker-size: 32px;
-  --pop-name-size: 52px;
+  --pop-name-size: 62px;
   --pop-qty-size: 32px;
-  --pop-badge-size: 36px;
-  --pop-price-size: 144px;
-  --pop-tax-incl-size: 60px;
-  --pop-tax-incl-lh: 1.1;
-  --pop-divider-mt: 4.8mm;
-  --pop-divider-mb: 4mm;
-  --pop-risk-size: 30px;
-  --pop-risk-pad: 0mm;
+  --pop-price-size: 192px;
+  --pop-tax-incl-size: 50px;
+  --pop-divider-mt: 2.4mm;
+  --pop-divider-mb: 1.6mm;
+  --pop-risk-size: 26px;
 }

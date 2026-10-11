@@ -11,6 +11,7 @@
  *          1マス = 幅 37.125mm × 高さ 52.5mm（＝A9タテ1枚分）
  *          rotate: true の場合、POPを90°回転させて配置（A5ヨコ用）
  * mixMatch: true ならミックスマッチ（◯個の価格）を表示する。false のサイズは通常の価格だけ
+ * riskUnderImage: true なら、左側に画像がある場合に医薬品リスク区分を画像の下へ置く（画像が無ければ POP の最下部）
  */
 
 // スキャン・検索で追加したときに 1枚 を入れるサイズ（同じJANの再スキャンでもこのサイズが +1）
@@ -48,7 +49,8 @@ export const SIZE_CONFIGS = {
     blocks: 2,
     mixed: { w: 2, h: 1 },  // 74.25mm × 52.5mm
     cssClass: 'pop-size-a8',
-    mixMatch: true
+    mixMatch: true,
+    riskUnderImage: true
   },
   a6half: {
     key: 'a6half',
@@ -61,7 +63,8 @@ export const SIZE_CONFIGS = {
     blocks: 4,
     mixed: { w: 4, h: 1 },  // 148.5mm × 52.5mm
     cssClass: 'pop-size-a6half',
-    mixMatch: true
+    mixMatch: true,
+    riskUnderImage: true
   },
   a6: {
     key: 'a6',

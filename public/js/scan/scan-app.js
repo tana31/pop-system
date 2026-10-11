@@ -20,7 +20,7 @@
 import { SIZE_CONFIGS, DEFAULT_SIZE_KEY, createDefaultCounts } from '../shared/pop-sizes.js';
 import { calcPriceIncl } from '../shared/price.js';
 import { loadQueue, saveQueue as storeQueue, toCount } from '../shared/print-queue.js';
-import { importProductCsv, decodeCsvFile, buildTemplateCsv } from './csv-import.js';
+import { importProductCsv, decodeCsvFile, buildTemplateCsv, groupMessages } from './csv-import.js';
 import { normalizeJan } from './master-schema.js';
 
 const SIZE_LIST = Object.values(SIZE_CONFIGS);
@@ -851,7 +851,8 @@ function renderQueueList() {
 // ============================================================
 // 商品リスト CSV の読み込み（読み込み結果を確認してから、リストを置き換える）
 // ============================================================
-const CSV_MESSAGE_LIMIT = 100;   // 画面に並べるエラー・注意の最大数
+const CSV_MESSAGE_LIMIT = 100;   // 画面に並べるエラー・注意の最大数（同じ内容は1つにまとめて数える）
+const CSV_LINE_LIMIT = 30;       // 1つのエラー・注意に並べる行番号の最大数
 let pendingCsvEntries = null;
 
 csvImportBtn.addEventListener('click', () => csvFileInput.click());
@@ -904,15 +905,20 @@ function showCsvResult(fileName, result) {
   pendingCsvEntries = result.entries;
   const n = result.entries.length;
   const parts = [`「${fileName}」：読み込める商品 ${n}件`];
-  if (result.janOnly) parts.push('（JAN のみ → 商品情報はマスタから取得）');
-  if (result.errors.length) parts.push(`／エラー ${result.errors.length}件（その行は読み込みません）`);
-  if (result.warnings.length) parts.push(`／注意 ${result.warnings.length}件`);
+  if (n > 0) parts.push(`（空欄の項目は${currentStore ? `店舗 ${currentStore}` : '標準価格'}のマスタから補完）`);
+  if (result.notInMaster) parts.push(`／マスタ未登録 ${result.notInMaster}件（CSV の値だけで作成）`);
+  // 件数は行の数（1行に複数のエラーがあっても1行と数える）
+  const errorLines = new Set(result.errors.map(m => m.line)).size;
+  const warningLines = new Set(result.warnings.map(m => m.line)).size;
+  if (errorLines) parts.push(`／エラー ${errorLines}行（その行は読み込みません）`);
+  if (warningLines) parts.push(`／注意 ${warningLines}行`);
   if (n > 0 && popQueue.length > 0) parts.push(`。今のリスト（${popQueue.length}件）は消えて置き換わります。`);
   csvResultSummary.textContent = parts.join('');
 
+  // 同じ内容のエラー・注意は1つにまとめ、後ろに行番号を並べる（例: ❌ JAN は…（3行目、8行目））
   const messages = [
-    ...result.errors.map(m => `❌ ${m.line}行目: ${m.message}`),
-    ...result.warnings.map(m => `⚠️ ${m.line}行目: ${m.message}`)
+    ...groupMessages(result.errors).map(g => `❌ ${g.message}（${formatLines(g.lines)}）`),
+    ...groupMessages(result.warnings).map(g => `⚠️ ${g.message}（${formatLines(g.lines)}）`)
   ];
   const shown = messages.slice(0, CSV_MESSAGE_LIMIT);
   if (messages.length > shown.length) shown.push(`ほか ${messages.length - shown.length}件`);
@@ -920,6 +926,12 @@ function showCsvResult(fileName, result) {
 
   csvApplyBtn.disabled = n === 0;
   csvResult.classList.remove('hidden');
+}
+
+/** 行番号を「3行目、8行目、15行目」の形にする。多すぎるときは「…ほか◯行」で打ち切る */
+function formatLines(lines) {
+  const shown = lines.slice(0, CSV_LINE_LIMIT).map(n => `${n}行目`).join('、');
+  return lines.length > CSV_LINE_LIMIT ? `${shown}…ほか${lines.length - CSV_LINE_LIMIT}行` : shown;
 }
 
 function hideCsvResult() {
