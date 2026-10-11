@@ -6,7 +6,6 @@
  */
 import { applyThemeColors, themeImageUrls } from './themes.js';
 import { createBarcodeElement } from './barcode.js';
-import { displayRisk } from '../shared/risk.js';
 
 /** POPセルを生成 */
 export function createPopCell(conf, item, theme) {
