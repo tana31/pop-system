@@ -201,6 +201,8 @@
 .pop-price {
   margin-top: auto;
   width: 100%;
+  font-family: "Bahnschrift", "Noto Sans JP", sans-serif;
+  font-variant-numeric: tabular-nums; /* 数字の幅を揃える */
 }
 
 .pop-price-row {
