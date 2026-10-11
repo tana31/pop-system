@@ -12,10 +12,15 @@
  *          rotate: true の場合、POPを90°回転させて配置（A5ヨコ用）
  * mixMatch: true ならミックスマッチ（◯個の価格）を表示する。false のサイズは通常の価格だけ
  * riskUnderImage: true なら、左側に画像がある場合に医薬品リスク区分を画像の下へ置く（画像が無ければ POP の最下部）
- * commentMax: コメントを表示できる最大の文字数（全角1文字＝1、半角1文字＝0.5 で数える。commentLength）。
- *             超えたコメントはそのサイズの POP に出さない（省略はしない）。スキャン画面の修正フォームと
- *             CSV 読み込みでは、枚数が1枚以上のサイズで超えていれば知らせる。
- *             値は「コメント欄の幅 ÷ コメントの文字サイズ」の切り捨て。画像がある（左側に画像の欄がある）ときの幅で決めている。
+ * commentMax:      コメントを表示できる最大の文字数。画像なしのデザインのとき
+ * commentMaxImage: 同じく、画像ありのデザインのとき（左側に画像の欄があるぶんコメント欄が狭い。
+ *                  A9タテは画像が上なので、どちらも同じ）
+ *             文字数は全角1文字＝1、半角1文字＝0.5 で数える（commentLength）。
+ *             超えたコメントはそのサイズの POP に出さない（省略はしない）。
+ *             スキャン画面の修正フォームと CSV 読み込みでは、デザインがまだ決まっていないので commentMax（画像なし）で判定し、
+ *             枚数が1枚以上のサイズで超えていれば知らせる（どのデザインでも表示されないコメント）。
+ *             画像ありのデザインだけで表示されないコメントは、プレビュー画面でデザインを選んだときに知らせる。
+ *             値は「コメント欄の幅 ÷ コメントの文字サイズ」の切り捨て（コメントは各行の「幅」に書いた幅で計算）。
  *             ★ css/pop-styles.css の --pop-comment-size・余白・--pop-img-w・--pop-gap を変えたら、ここも計算し直す
  */
 
@@ -41,7 +46,8 @@ export const SIZE_CONFIGS = {
     blocks: 1,
     mixed: { w: 1, h: 1 },  // 37.125mm × 52.5mm
     cssClass: 'pop-size-a9',
-    commentMax: 9,     // 幅 約26.8mm ÷ 11px
+    commentMax: 9,     // 幅 約26.7mm ÷ 11px
+    commentMaxImage: 9,  // 画像は上に置くので、コメント欄の幅は画像なしと同じ
     mixMatch: false         // 幅が狭いので表示しない
   },
   a8: {
@@ -55,7 +61,8 @@ export const SIZE_CONFIGS = {
     blocks: 2,
     mixed: { w: 2, h: 1 },  // 74.25mm × 52.5mm
     cssClass: 'pop-size-a8',
-    commentMax: 11,    // 幅 約39.9mm（画像 22mm＋間 2mm を除く）÷ 13.5px
+    commentMax: 17,       // 幅 約63.8mm ÷ 13.5px
+    commentMaxImage: 11,  // 幅 約39.7mm（画像 22mm＋間 2mm を除く）÷ 13.5px
     mixMatch: true,
     riskUnderImage: true
   },
@@ -70,7 +77,8 @@ export const SIZE_CONFIGS = {
     blocks: 4,
     mixed: { w: 4, h: 1 },  // 148.5mm × 52.5mm
     cssClass: 'pop-size-a6half',
-    commentMax: 30,    // 幅 約113.7mm ÷ 14px
+    commentMax: 37,       // 幅 約137.8mm ÷ 14px
+    commentMaxImage: 30,  // 幅 約113.5mm ÷ 14px
     mixMatch: true,
     riskUnderImage: true
   },
@@ -85,7 +93,8 @@ export const SIZE_CONFIGS = {
     blocks: 8,
     mixed: { w: 4, h: 2 },  // 148.5mm × 105mm
     cssClass: 'pop-size-a6',
-    commentMax: 12,    // 幅 約87.7mm ÷ 27px
+    commentMax: 19,       // 幅 約137.8mm ÷ 27px
+    commentMaxImage: 12,  // 幅 約87.6mm ÷ 27px
     mixMatch: true
   },
   a5: {
@@ -99,7 +108,8 @@ export const SIZE_CONFIGS = {
     blocks: 16,
     mixed: { w: 4, h: 4, rotate: true }, // 148.5mm × 210mm の枠に90°回転して配置
     cssClass: 'pop-size-a5',
-    commentMax: 13,    // 幅 約129mm ÷ 35px
+    commentMax: 21,       // 幅 約195.5mm ÷ 35px
+    commentMaxImage: 13,  // 幅 約128.9mm ÷ 35px
     mixMatch: true
   },
   a4: {
@@ -113,7 +123,8 @@ export const SIZE_CONFIGS = {
     blocks: 32,
     mixed: { w: 8, h: 4 },  // 297mm × 210mm
     cssClass: 'pop-size-a4',
-    commentMax: 13,    // 幅 約188.6mm ÷ 54px
+    commentMax: 19,       // 幅 約276.5mm ÷ 54px
+    commentMaxImage: 13,  // 幅 約188.6mm ÷ 54px
     mixMatch: true
   }
 };
@@ -137,13 +148,21 @@ export function commentLength(text) {
   return n;
 }
 
-/** そのサイズの POP にコメントを表示できるか（上限以内か） */
-export function commentFits(conf, text) {
-  return commentLength(text) <= conf.commentMax;
+/** コメントの上限の文字数。hasImage は「そのデザインに画像があるか」 */
+export function commentLimit(conf, hasImage = false) {
+  return hasImage ? conf.commentMaxImage : conf.commentMax;
 }
 
-/** 枚数が1枚以上のサイズのうち、コメントが長すぎて表示されないサイズ（SIZE_CONFIGS の値の配列） */
-export function commentHiddenSizes(text, counts) {
+/** そのサイズの POP にコメントを表示できるか（上限以内か） */
+export function commentFits(conf, text, hasImage = false) {
+  return commentLength(text) <= commentLimit(conf, hasImage);
+}
+
+/**
+ * 枚数が1枚以上のサイズのうち、コメントが長すぎて表示されないサイズ（SIZE_CONFIGS の値の配列）。
+ * hasImage を省くと画像なしの上限で判定する（スキャン画面・CSV 読み込み。どのデザインでも表示されないもの）
+ */
+export function commentHiddenSizes(text, counts, hasImage = false) {
   if (!String(text ?? '').trim()) return [];
-  return Object.values(SIZE_CONFIGS).filter(conf => Number(counts?.[conf.key]) > 0 && !commentFits(conf, text));
+  return Object.values(SIZE_CONFIGS).filter(conf => Number(counts?.[conf.key]) > 0 && !commentFits(conf, text, hasImage));
 }

@@ -53,6 +53,12 @@
           </label>
         </div>
         <div id="statusInfo" class="status-info" role="status"></div>
+
+        <!-- 選んだデザインでコメントが表示されない商品（preview-app.js の renderCommentAlert）。クリックで一覧を開く -->
+        <details id="commentAlert" class="comment-alert hidden">
+          <summary id="commentAlertSummary" class="comment-alert__summary"></summary>
+          <ul id="commentAlertList" class="comment-alert__list"></ul>
+        </details>
       </div>
     </div>
   </header>

@@ -30,6 +30,11 @@ export function applyThemeColors(el, theme) {
   });
 }
 
+/** デザインに画像があるか（画像ありはコメント欄が狭く、コメントの上限が変わる。pop-sizes.js の commentMaxImage） */
+export function themeHasImage(theme) {
+  return Boolean(theme?.image);
+}
+
 /**
  * 画像URLを決定。専用画像があるサイズ（A9タテ）は sale.png → sale_a9.png を優先し、
  * 読み込めなければ fallback（通常画像）を使う。画像なしのテーマは null

@@ -796,6 +796,27 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .status-info--warn { font-weight: 700; color: var(--c-primary); }
 .status-info--warn::before { content: "⚠ "; }
 
+/* 選んだデザインでコメントが表示されない商品（preview-app.js の renderCommentAlert）。白い帯の最下段に、閉じた状態で出す */
+.comment-alert {
+  flex: 1 0 100%;
+  font-size: .8125rem;
+  border-top: 1px solid var(--c-line);
+  padding-top: .375rem;
+}
+.comment-alert__summary { font-weight: 700; color: var(--c-primary); cursor: pointer; }
+.comment-alert__summary::marker { color: var(--c-text-mute); }
+.comment-alert__list {
+  max-height: 10rem;          /* 上に固定する帯なので、商品が多くても伸びすぎないよう中だけスクロール */
+  overflow-y: auto;
+  margin: .375rem 0 0;
+  padding: 0 0 0 1.25rem;
+}
+.comment-alert__list li { display: flex; gap: .75rem; padding: .125rem 0; }
+.comment-alert__name { font-weight: 700; }
+.comment-alert__sizes { color: var(--c-primary); white-space: nowrap; }
+.comment-alert__comment { color: var(--c-text-sub); }
+@media print { .comment-alert { display: none !important; } }
+
 .preview-main { max-width: 72rem; margin: 0 auto; padding: 1.5rem; }
 
 /* 各ページの上のページ番号（.a4-page の外なので PDF には写らない） */

@@ -8,10 +8,14 @@
  * 「印刷・PDF保存」はブラウザの印刷機能を使う（用紙・余白は css/print.css の @page で決める）。
  * 文字もバーコードもベクターのまま PDF になる。「PDFを直接ダウンロード（旧）」は画像化する以前の方式。
  * ミシン目の点線は印刷しない。URL に ?cutlines を付けて開いたときだけ印刷する（テスト用）。
+ *
+ * コメントの上限は画像の有無で変わる（pop-sizes.js の commentMax・commentMaxImage）。スキャン画面ではデザインが
+ * 決まっていないので画像なしの上限でしか確かめていない。そこで、選んだデザインでコメントが表示されない商品を
+ * 白い帯の下に一覧で知らせる（renderCommentAlert）。
  */
-import { SIZE_CONFIGS, MIXED_GRID } from '../shared/pop-sizes.js';
+import { SIZE_CONFIGS, MIXED_GRID, commentHiddenSizes } from '../shared/pop-sizes.js';
 import { loadQueue, countTotalPops } from '../shared/print-queue.js';
-import { fetchThemes } from './themes.js';
+import { fetchThemes, themeHasImage } from './themes.js';
 import { buildSeparatedPages, buildMixedPages } from './imposition.js';
 import { renderPage, renderEmptyState } from './page-render.js';
 import { fitPopText } from './pop-cell.js';
@@ -25,6 +29,9 @@ const statusInfo = document.getElementById('statusInfo');
 const renderArea = document.getElementById('pdfRenderArea');
 const notice = document.getElementById('previewNotice');
 const noticeText = document.getElementById('previewNoticeText');
+const commentAlert = document.getElementById('commentAlert');
+const commentAlertSummary = document.getElementById('commentAlertSummary');
+const commentAlertList = document.getElementById('commentAlertList');
 
 const queue = loadQueue();
 const totalPops = countTotalPops(queue);
@@ -89,12 +96,32 @@ function render() {
   // ページ番号はページの外（.a4-page の前）に置くので、PDF には写らない
   renderArea.replaceChildren(...pages.flatMap((p, i) => [pageLabel(i + 1, n), renderPage(p, getTheme)]));
   fitPopText(renderArea);
+  renderCommentAlert(getTheme);
 
   if (themeWarning) {
     setStatus(themeWarning, true);
   } else {
     setStatus(`商品 ${queue.length}件 ／ POP ${totalPops}枚 ／ A4 ${n}ページ`);
   }
+}
+
+/**
+ * 選んだデザイン（CSV でデザインIDを指定した商品はそのデザイン）で、コメントが長いため表示されない POP がある商品を一覧にする。
+ * 一覧は閉じた状態で出し、開いた・閉じたはデザインを変えても保つ
+ */
+function renderCommentAlert(getTheme) {
+  const rows = [];
+  for (const q of queue) {
+    const hidden = commentHiddenSizes(q.item.comment, q.counts, themeHasImage(getTheme(q.item)));
+    if (hidden.length) rows.push({ name: q.item.name || '（商品名なし）', comment: q.item.comment, sizes: hidden.map(c => c.label).join('・') });
+  }
+  commentAlert.classList.toggle('hidden', rows.length === 0);
+  if (rows.length === 0) return;
+  commentAlertSummary.textContent = `${rows.length}件の商品で、このデザインではコメントが長いため表示されない POP があります`;
+  commentAlertList.innerHTML = rows.map(r => `
+    <li><span class="comment-alert__name">${escapeAttr(r.name)}</span>
+      <span class="comment-alert__sizes">${escapeAttr(r.sizes)}</span>
+      <span class="comment-alert__comment">${escapeAttr(r.comment)}</span></li>`).join('');
 }
 
 function pageLabel(no, total) {

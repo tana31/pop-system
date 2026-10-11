@@ -3,7 +3,8 @@
  * item はマスタWorkerが変換済みの商品データ（形は js/scan/master-schema.js 冒頭を参照）。
  * CSV から読み込んだ商品は mix（ミックスマッチ）と themeId を持つことがある（js/scan/csv-import.js 冒頭）
  * jan が空の商品（手入力・「〇〇 各種」）と noBarcode が true の商品は、バーコードを印字しない
- * コメントがそのサイズの上限（pop-sizes.js の commentMax）を超える場合は、コメントを出さない（行の高さは残す）
+ * コメントがそのサイズの上限を超える場合は、コメントを出さない（行の高さは残す）。
+ * 上限は画像の有無で変わる（pop-sizes.js の commentMax・commentMaxImage）
  */
 import { commentFits } from '../shared/pop-sizes.js';
 import { applyThemeColors, themeImageUrls } from './themes.js';
@@ -18,8 +19,9 @@ export function createPopCell(conf, item, theme) {
   applyThemeColors(cell, theme);
 
   const isMix = Boolean(item.mix && conf.mixMatch);
-  // 長すぎるコメントは省略（…）せず、このサイズでは出さない
-  const comment = commentFits(conf, item.comment) ? item.comment : '';
+  const image = themeImageUrls(theme, conf.key);
+  // 長すぎるコメントは省略（…）せず、このサイズでは出さない（上限は画像の有無で変わる）
+  const comment = commentFits(conf, item.comment, Boolean(image)) ? item.comment : '';
   cell.innerHTML = `
     <div class="pop-content">
       <div class="pop-comment">${escapeHtml(comment)}</div>
@@ -45,7 +47,6 @@ export function createPopCell(conf, item, theme) {
   risk.textContent = displayRisk(item.risk);
   bottom.append(barcode, risk);
 
-  const image = themeImageUrls(theme, conf.key);
   if (!image) return cell;
 
   // riskUnderImage のサイズ（A8ヨコ・A6ハーフ）は、医薬品区分とバーコードを POP の最下段（.pop-foot）へ出し、
@@ -60,7 +61,7 @@ export function createPopCell(conf, item, theme) {
   }
 
   // 画像が読み込めずに消えたときは、画像なしの配置に戻す（左側に空白を残さない）。
-  // 商品情報の欄が広がるので、描画時に縮めた価格の大きさも測り直す
+  // 商品情報の欄が広がるので、画像ありの上限で出さなかったコメントを画像なしの上限で出し直し、描画時に縮めた価格の大きさも測り直す
   // （fitPopText は描画直後に呼ばれるため、画像が消える前の狭い欄で縮めたままになっている）
   cell.prepend(createImageContainer(image.src, image.fallback, () => {
     if (foot) {
@@ -68,6 +69,7 @@ export function createPopCell(conf, item, theme) {
       foot.remove();
       cell.classList.remove('pop-has-foot');
     }
+    if (commentFits(conf, item.comment, false)) cell.querySelector('.pop-comment').textContent = item.comment ?? '';
     if (cell.isConnected) fitPopText(cell);
   }));
 
@@ -153,12 +155,12 @@ export function fitPopText(root) {
 
 /**
  * 文字数では上限以内なのに、実際にはコメントが欄からはみ出した POP を開発者ツールのコンソールに知らせる
- * （半角の多いコメントなど。そのときは CSS の省略（…）で切れる）。pop-sizes.js の commentMax を見直す目安にする
+ * （半角の多いコメントなど。そのときは CSS の省略（…）で切れる）。pop-sizes.js の commentMax・commentMaxImage を見直す目安にする
  */
 function warnCommentOverflow(root) {
   for (const el of root.querySelectorAll('.pop-comment')) {
     if (el.scrollWidth > el.clientWidth + 1) {
-      console.warn(`コメントが欄からはみ出しています（pop-sizes.js の commentMax を見直してください）: ${el.textContent}`);
+      console.warn(`コメントが欄からはみ出しています（pop-sizes.js の commentMax・commentMaxImage を見直してください）: ${el.textContent}`);
     }
   }
 }
