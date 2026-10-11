@@ -15,6 +15,8 @@
  *  - 医薬品区分と税率は常にマスタから取る（マスタに無い商品は空欄・税率なし）
  *  - 枚数の列が1つも無い・枚数がすべて空欄か 0 の行は、既定のサイズ（DEFAULT_SIZE_KEY）1枚にする
  *  - ミックスマッチを表示しないサイズ（A9タテ）の枚数があっても注意は出さない（通常の価格だけで印刷）
+ *  - コメント（CSV・マスタのどちらの値でも）が、枚数が1枚以上のサイズの上限（pop-sizes.js の commentMax）を
+ *    超える行は注意を出す（そのサイズの POP にはコメントが出ない）
  *  - エラーの行は読み込まない。注意（警告）の行は読み込む
  *  - エラー・注意の文言には行ごとの値（JAN や価格）を入れない。同じ内容を1つにまとめ、行番号を並べて表示するため
  *    （groupMessages）
@@ -24,7 +26,7 @@
  *   themeId: string                             デザインID（空なら画面で選んだデザイン）
  */
 import { parseCsv } from '../shared/csv.js';
-import { SIZE_CONFIGS, createDefaultCounts } from '../shared/pop-sizes.js';
+import { SIZE_CONFIGS, createDefaultCounts, commentHiddenSizes } from '../shared/pop-sizes.js';
 import { calcPriceIncl } from '../shared/price.js';
 import { normalizeJan } from './master-schema.js';
 
@@ -193,6 +195,12 @@ export async function importProductCsv(text, { lookup, themeIds = null }) {
       }
       // 枚数がすべて空欄か 0 なら、スキャン時と同じ既定のサイズ1枚にする
       if (Object.values(counts).every(c => c === 0)) counts = createDefaultCounts();
+    }
+
+    // コメントの長さ（枚数が決まってから、印刷するサイズだけで確かめる）
+    if (item) {
+      const hidden = commentHiddenSizes(item.comment, counts);
+      if (hidden.length) warn(`コメントが長いため、${hidden.map(c => c.label).join('・')}ではコメントが表示されません`);
     }
 
     result.errors.push(...errors);

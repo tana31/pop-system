@@ -137,7 +137,10 @@
 
 /* --- 1カラム構成 要素スタイル（詰めた行間設定） --- */
 
-/* 1. コメント */
+/* 1. コメント
+   上限（pop-sizes.js の commentMax）を超えるコメントは pop-cell.js が出さない。
+   下の省略（…）は、上限以内でも欄からはみ出したときの保険（そのときはコンソールに警告が出る）。
+   ★ --pop-comment-size・余白・--pop-img-w・--pop-gap を変えたら、commentMax も計算し直す */
 .pop-comment {
   font-size: var(--pop-comment-size);
   font-weight: 800;

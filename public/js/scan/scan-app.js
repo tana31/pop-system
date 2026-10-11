@@ -16,8 +16,11 @@
  *
  * 画面右上のメニュー（ハンバーガー）に、マスタの同期状態と CSV テンプレートをまとめている。
  * 通知は画面左下に重ねて出す（リストの位置を動かさないため）。
+ *
+ * コメントが、枚数が1枚以上のサイズの上限（pop-sizes.js の commentMax）を超えると、コメント欄を赤枠にし、
+ * 右に「A9 非表示」のように表示されないサイズを出す（入力中・枚数の変更でもその場で更新する）。
  */
-import { SIZE_CONFIGS, DEFAULT_SIZE_KEY, createDefaultCounts } from '../shared/pop-sizes.js';
+import { SIZE_CONFIGS, DEFAULT_SIZE_KEY, createDefaultCounts, commentLength, commentHiddenSizes } from '../shared/pop-sizes.js';
 import { calcPriceIncl } from '../shared/price.js';
 import { loadQueue, saveQueue as storeQueue, toCount } from '../shared/print-queue.js';
 import { importProductCsv, decodeCsvFile, buildTemplateCsv, groupMessages } from './csv-import.js';
@@ -339,6 +342,7 @@ queueListContainer.addEventListener('change', (e) => {
     countInput.classList.toggle('is-zero', n === 0);
     saveQueue();
     renderQueueTotal();
+    updateCommentCheck(idx);   // 枚数で「表示されないサイズ」が変わる
     return;
   }
 
@@ -348,12 +352,19 @@ queueListContainer.addEventListener('change', (e) => {
   }
 });
 
-// 修正欄で Enter → 確定してスキャン欄へ戻す（次のスキャンが修正欄に入力されるのを防ぐ）
+// コメントは入力中から長さを確かめる（保存は change のとき）
+queueListContainer.addEventListener('input', (e) => {
+  const input = e.target.closest('.item-input[data-key="comment"]');
+  if (input) updateCommentCheck(Number(input.dataset.idx), input.value);
+});
+
+// 修正欄で Enter → 確定して入力欄から抜ける（スキャン欄へは移動しない）。
+// 抜けたあとのスキャンは、下の「どこにもカーソルが無いときの数字はスキャン欄へ」で受ける
 queueListContainer.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || !e.target.closest('.item-input, .count-input')) return;
+  if (e.isComposing || e.keyCode === 229) return;   // 日本語入力の変換確定の Enter は対象外
   e.preventDefault();
   e.target.blur();          // change イベントが先に発生して内容が保存される
-  focusJan();
 });
 
 // 枚数欄はクリックしたら中身を全選択（そのまま数字を打てるように）
@@ -528,6 +539,37 @@ function refreshCardState(idx) {
   const rate = row.querySelector('.tax-text');
   if (rate) rate.textContent = taxRateText(q.item);
   row.querySelector('[data-action="row-menu"]')?.classList.toggle('is-hidden', !rowMenuItems(q).length);
+  updateCommentCheck(idx);
+}
+
+/**
+ * コメントの長さの確認結果。hidden は「枚数が1枚以上で、コメントが表示されないサイズ」
+ * @returns { hidden, html }   html はコメント欄の右に出す「A9 非表示」（問題が無ければ空）
+ */
+function commentCheck(comment, counts) {
+  const hidden = commentHiddenSizes(comment, counts);
+  if (!hidden.length) return { hidden, html: '' };
+  const detail = hidden.map(c => `${c.label}は${c.commentMax}文字まで`).join('、');
+  const title = `コメントが長いため表示されません（${detail}。現在${commentLength(comment)}文字。半角は0.5文字で数えます）`;
+  return {
+    hidden,
+    html: `<span class="q-warn" title="${escapeHtml(title)}">${escapeHtml(hidden.map(shortSizeLabel).join('・'))} 非表示</span>`
+  };
+}
+
+/** コメント欄の赤枠と「A9 非表示」を更新する。comment を渡すと入力中の値で確かめる */
+function updateCommentCheck(idx, comment) {
+  const row = queueListContainer.querySelector(`.queue-row[data-idx="${idx}"]`);
+  const q = popQueue[idx];
+  if (!row || !q) return;
+  const { hidden, html } = commentCheck(comment ?? q.item.comment, q.counts);
+  const input = row.querySelector('.item-input[data-key="comment"]');
+  if (input) {
+    input.classList.toggle('is-over', hidden.length > 0);
+    input.setAttribute('aria-invalid', String(hidden.length > 0));
+  }
+  const slot = row.querySelector('.q-comment-check');
+  if (slot) slot.innerHTML = html;
 }
 
 // ============================================================
@@ -765,6 +807,8 @@ function rowHtml(q, idx, sizes) {
     return `<div class="q-count"><input type="number" min="0" inputmode="numeric" class="${cls}" value="${n}"
       data-idx="${idx}" data-field="${c.key}" aria-label="${escapeHtml(c.label)}の枚数"></div>`;
   }).join('');
+  const check = commentCheck(q.item.comment, q.counts);
+  const commentCls = ` item-input--comment${check.hidden.length ? ' is-over' : ''}`;
   const themeTag = q.item.themeId ? `<span class="q-tag" title="デザインID">${escapeHtml(q.item.themeId)}</span>` : '';
 
   return `
@@ -782,7 +826,8 @@ function rowHtml(q, idx, sizes) {
       <div class="q-cell q-detail">
         ${manual ? inputHtml(q, idx, 'jan', 'JAN', ' item-input--jan') : janTextHtml(q.item)}
         ${inputHtml(q, idx, 'maker', 'メーカー', ' item-input--maker')}
-        ${inputHtml(q, idx, 'comment', 'コメント', ' item-input--comment')}
+        ${inputHtml(q, idx, 'comment', 'コメント', commentCls)}
+        <span class="q-comment-check">${check.html}</span>
         ${themeTag}
       </div>
       <div class="q-cell">${inputHtml(q, idx, 'qty2', '数量2')}</div>
@@ -973,6 +1018,23 @@ function isMenuOpen() {
 function focusJan() {
   if (!janInput.disabled) janInput.focus();
 }
+
+// どこにもカーソルが無いとき（文字を入力できる欄にフォーカスが無いとき）に数字が来たら、
+// スキャン欄へ移して受け取る。修正欄から抜けたあとや、画面の余白をクリックしたあとでも
+// そのままバーコードを読めるようにするため（スキャナーは数字を打ってから Enter を送る）
+function isTextField(el) {
+  return !!el?.matches?.(
+    'input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=reset], [type=file]), textarea, select, [contenteditable]'
+  );
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!/^[0-9]$/.test(e.key) || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return;
+  if (janInput.disabled || isTextField(document.activeElement)) return;
+  e.preventDefault();
+  janInput.focus();
+  janInput.value += e.key;  // 最初の1桁も取りこぼさない。以降の数字と Enter はスキャン欄に直接入る
+});
 
 menuBtn.addEventListener('click', () => {
   if (isMenuOpen()) {

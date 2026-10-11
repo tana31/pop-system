@@ -3,7 +3,9 @@
  * item はマスタWorkerが変換済みの商品データ（形は js/scan/master-schema.js 冒頭を参照）。
  * CSV から読み込んだ商品は mix（ミックスマッチ）と themeId を持つことがある（js/scan/csv-import.js 冒頭）
  * jan が空の商品（手入力・「〇〇 各種」）と noBarcode が true の商品は、バーコードを印字しない
+ * コメントがそのサイズの上限（pop-sizes.js の commentMax）を超える場合は、コメントを出さない（行の高さは残す）
  */
+import { commentFits } from '../shared/pop-sizes.js';
 import { applyThemeColors, themeImageUrls } from './themes.js';
 import { createBarcodeElement } from './barcode.js';
 
@@ -16,9 +18,11 @@ export function createPopCell(conf, item, theme) {
   applyThemeColors(cell, theme);
 
   const isMix = Boolean(item.mix && conf.mixMatch);
+  // 長すぎるコメントは省略（…）せず、このサイズでは出さない
+  const comment = commentFits(conf, item.comment) ? item.comment : '';
   cell.innerHTML = `
     <div class="pop-content">
-      <div class="pop-comment">${escapeHtml(item.comment)}</div>
+      <div class="pop-comment">${escapeHtml(comment)}</div>
       <div class="pop-maker">${escapeHtml(item.maker)}</div>
       <div class="pop-name">${escapeHtml(item.name)}</div>
       <div class="pop-qty-group">
@@ -131,6 +135,7 @@ function displayRisk(value) {
  * 画面に配置した後（レイアウト確定後）に呼ぶこと
  */
 export function fitPopText(root) {
+  warnCommentOverflow(root);
   const rows = [...root.querySelectorAll('.pop-price-row')];
   for (const row of rows) {
     const price = row.querySelector('.pop-price-excl');
@@ -143,6 +148,18 @@ export function fitPopText(root) {
       if (fitRow(row)) changed = true;
     }
     if (!changed) break;
+  }
+}
+
+/**
+ * 文字数では上限以内なのに、実際にはコメントが欄からはみ出した POP を開発者ツールのコンソールに知らせる
+ * （半角の多いコメントなど。そのときは CSS の省略（…）で切れる）。pop-sizes.js の commentMax を見直す目安にする
+ */
+function warnCommentOverflow(root) {
+  for (const el of root.querySelectorAll('.pop-comment')) {
+    if (el.scrollWidth > el.clientWidth + 1) {
+      console.warn(`コメントが欄からはみ出しています（pop-sizes.js の commentMax を見直してください）: ${el.textContent}`);
+    }
   }
 }
 
