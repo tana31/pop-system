@@ -1,0 +1,64 @@
+/**
+ * 印刷用の設定（ブラウザの印刷 → 「PDFに保存」またはプリンターへ）
+ * preview.html から読み込む。画面の表示には影響しない
+ *
+ * 印刷ダイアログで「倍率」「余白」を変えると、この設定より優先される。
+ * ずれたり見切れたりするときは、どちらも「デフォルト」に戻す
+ */
+
+/* 用紙。縦のページは A4 縦、.landscape のページ（A4ヨコの POP など）だけ A4 横にする。
+   余白は 0（POP の余白はページの中で取っている）。
+   余白が 0 だと、ブラウザが付ける日付・URL のヘッダーとフッターも印刷されない */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+@page pop-landscape {
+  size: A4 landscape;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body.preview-page {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    background: #ffffff;
+  }
+
+  /* 背景色・テーマ画像を、ダイアログの「背景のグラフィック」に関係なく印刷する */
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* 画面用の部品は印刷しない */
+  .app-header,
+  .page-label,
+  .toast,
+  .empty-state {
+    display: none !important;
+  }
+
+  .preview-main {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* 1ページ＝用紙1枚。影と余白は画面用なので外す */
+  .a4-page {
+    margin: 0;
+    box-shadow: none;
+    break-after: page;
+    break-inside: avoid;
+  }
+  .a4-page.landscape {
+    page: pop-landscape;
+  }
+  /* 最後のページの後ろに白紙が付かないようにする */
+  .a4-page:last-child {
+    break-after: auto;
+  }
+}

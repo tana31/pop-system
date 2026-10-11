@@ -39,7 +39,8 @@
 *, *::before, *::after { box-sizing: border-box; }
 body {
   margin: 0;
-  /* Noto Sans JP が読み込めない環境（社外ネットワーク不可など）では OS のフォントで表示する */
+  /* PC に入っている Noto Sans JP（Windows 10/11 に標準搭載）を使う。Web フォントは読み込まない。
+     入っていない PC（更新前の Windows など）では OS のフォントで表示する */
   font-family: "Noto Sans JP", system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "メイリオ", sans-serif;
   line-height: 1.5;
 }

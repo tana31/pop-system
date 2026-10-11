@@ -4,6 +4,9 @@
  *
  * 各 A4 ページの上には「1 / 3」のページ番号を付ける（.page-label。PDF には入らない）。
  * PDF の作成結果やエラーは、スキャン画面と同じく画面左下の通知で知らせる。
+ *
+ * 「印刷・PDF保存」はブラウザの印刷機能を使う（用紙・余白は css/print.css の @page で決める）。
+ * 文字もバーコードもベクターのまま PDF になる。「PDFを直接ダウンロード（旧）」は画像化する以前の方式。
  */
 import { SIZE_CONFIGS, MIXED_GRID } from '../shared/pop-sizes.js';
 import { loadQueue, countTotalPops } from '../shared/print-queue.js';
@@ -16,6 +19,7 @@ import { exportPagesToPdf } from './pdf-export.js';
 const modeSelect = document.getElementById('modeSelect');
 const themeSelect = document.getElementById('themeSelect');
 const downloadBtn = document.getElementById('downloadPdfBtn');
+const printBtn = document.getElementById('printBtn');
 const statusInfo = document.getElementById('statusInfo');
 const renderArea = document.getElementById('pdfRenderArea');
 const notice = document.getElementById('previewNotice');
@@ -32,7 +36,7 @@ async function init() {
   if (totalPops === 0) {
     setStatus('印刷するPOPがありません');
     renderArea.replaceChildren(renderEmptyState());
-    modeSelect.disabled = themeSelect.disabled = downloadBtn.disabled = true;
+    modeSelect.disabled = themeSelect.disabled = downloadBtn.disabled = printBtn.disabled = true;
     return;
   }
 
@@ -50,6 +54,10 @@ async function init() {
   modeSelect.addEventListener('change', render);
   themeSelect.addEventListener('change', render);
   downloadBtn.addEventListener('click', downloadPdf);
+  printBtn.addEventListener('click', () => window.print());
+  // Ctrl+P で印刷したときも、保存するファイル名の初期値を日付入りにする
+  window.addEventListener('beforeprint', setPrintTitle);
+  window.addEventListener('afterprint', restoreTitle);
 
   render();
 }
@@ -113,6 +121,18 @@ async function downloadPdf() {
     downloadBtn.disabled = false;
     downloadBtn.textContent = label;
   }
+}
+
+/**
+ * 「PDFに保存」のファイル名の初期値はページのタイトルになるので、印刷中だけ書き換える
+ * （POP_Print_2026-10-11.pdf のようになる）
+ */
+const screenTitle = document.title;
+function setPrintTitle() {
+  document.title = `POP_Print_${todayLocal()}`;
+}
+function restoreTitle() {
+  document.title = screenTitle;
 }
 
 let noticeTimer = null;

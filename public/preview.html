@@ -5,12 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>印刷プレビュー - POP作成システム</title>
 
-  <!-- 画面の文字は Noto Sans JP（POP 本体のフォントは pop-styles.css で別に指定） -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap">
+  <!-- 文字は PC に入っている Noto Sans JP（Windows 10/11 に標準搭載）を使う。Web フォントは読み込まない -->
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/pop-styles.css">
+  <!-- 印刷（PDFに保存）用の用紙・余白の設定 -->
+  <link rel="stylesheet" href="css/print.css">
 
   <!-- PDF生成用ライブラリ（グローバル変数として使うので preview-app.js より前に同期読み込み） -->
   <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js"></script>
@@ -21,14 +20,18 @@
 </head>
 <body class="preview-page">
 
-  <!-- 赤い帯（戻る・題名・PDF）と白い帯（面付け・デザイン・集計）をまとめて上に固定する -->
+  <!-- 赤い帯（戻る・題名・印刷）と白い帯（面付け・デザイン・集計）をまとめて上に固定する -->
   <header class="app-header">
     <div class="header-inner">
       <div class="header-left">
         <a href="index.html" class="btn-back">‹ リストに戻る</a>
         <h1 class="app-title">印刷プレビュー</h1>
       </div>
-      <button type="button" id="downloadPdfBtn" class="btn-download">PDFをダウンロード</button>
+      <div class="header-tools">
+        <!-- 旧方式（画像化して PDF を作る）。印刷方式で問題がなければ外す -->
+        <button type="button" id="downloadPdfBtn" class="btn-back">PDFを直接ダウンロード（旧）</button>
+        <button type="button" id="printBtn" class="btn-download">印刷・PDF保存</button>
+      </div>
     </div>
 
     <div class="preview-toolbar">
